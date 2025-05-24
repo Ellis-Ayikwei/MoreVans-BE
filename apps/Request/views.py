@@ -496,7 +496,7 @@ class RequestViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post", "put", "patch"])
     def submit_step4(self, request, pk=None):
         """Handle step 4 submission (Schedule)"""
-        from pricing.services import PricingService
+        from apps.pricing.services import PricingService
 
         try:
             # Save the request data
@@ -521,7 +521,7 @@ class RequestViewSet(viewsets.ModelViewSet):
 
             # Get forecast data from the complete request object
             forecast_data = get_request_forecast_data(instance)
-            
+
             # Calculate price forecast
             forecast_response = PricingService.calculate_price_forecast(forecast_data)
 
@@ -579,45 +579,47 @@ class RequestViewSet(viewsets.ModelViewSet):
         """
         req = self.get_object()
         print(" the request data ", request.data)
-        
+
         # Get the price and staff count from the request
         price = request.data.get("total_price")
         staff_count = request.data.get("staff_count")
         selected_date = request.data.get("selected_date")
-        
+
         if not all([price, staff_count, selected_date]):
             return Response(
                 {"error": "Price, staff count, and selected date are required"},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
-            
+
         try:
             # Convert selected_date string to datetime.date object
             from datetime import datetime
+
             selected_date = datetime.strptime(selected_date, "%Y-%m-%d").date()
-            
+
             # Update the request with the accepted price and staff count
             req.final_price = price
             req.stuff_required = staff_count
             req.preferred_pickup_date = selected_date
             req.status = "accepted"
             req.save()
-            
-            return Response({
-                "message": "Price accepted successfully",
-                "request_id": req.id,
-                "final_price": req.final_price,
-                "staff_count": req.stuff_required,
-                "selected_date": req.preferred_pickup_date
-            })
-            
+
+            return Response(
+                {
+                    "message": "Price accepted successfully",
+                    "request_id": req.id,
+                    "final_price": req.final_price,
+                    "staff_count": req.stuff_required,
+                    "selected_date": req.preferred_pickup_date,
+                }
+            )
+
         except ValueError as e:
             return Response(
                 {"error": f"Invalid date format. Expected YYYY-MM-DD: {str(e)}"},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
         except Exception as e:
             return Response(
-                {"error": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

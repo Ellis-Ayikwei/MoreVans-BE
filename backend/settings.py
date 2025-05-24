@@ -22,7 +22,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = "django-insecure-%u9eljyfg@m8zp&5)u6yv#_m6xbp0_m1!6+h#emx%bbmeo)1@="
-OPENWEATHERMAP_API_KEY = os.environ.get('OPENWEATHERMAP_API_KEY', '') 
+OPENWEATHERMAP_API_KEY = os.environ.get("OPENWEATHERMAP_API_KEY", "")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -194,7 +194,7 @@ AUTH_USER_MODEL = "User.User"
 
 # Add custom authentication backends
 AUTHENTICATION_BACKENDS = [
-    "Authentication.backends.EmailOrPhoneBackend",  # Custom backend for email/phone authentication
+    "apps.Authentication.backends.EmailOrPhoneBackend",  # Custom backend for email/phone authentication
     "django.contrib.auth.backends.ModelBackend",  # Default backend as fallback
 ]
 
