@@ -623,3 +623,54 @@ class RequestViewSet(viewsets.ModelViewSet):
             return Response(
                 {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    @action(detail=True, methods=["post"])
+    def update_details(self, request, pk=None):
+        """Update request details"""
+        try:
+            # Get the request object using pk instead of request_id
+            request_obj = self.get_object()  # This uses pk automatically
+
+            # Update request details
+            request_obj.contact_name = request.data.get(
+                "name", request_obj.contact_name
+            )
+            request_obj.contact_email = request.data.get(
+                "email", request_obj.contact_email
+            )
+            request_obj.contact_phone = request.data.get(
+                "phone", request_obj.contact_phone
+            )
+            request_obj.request_type = request.data.get(
+                "request_type", request_obj.request_type
+            )
+            request_obj.staff_count = request.data.get(
+                "staff_count", request_obj.staff_count
+            )
+
+            # # Update journey stops if provided
+            # if 'journey_stops' in request.data:
+            #     request_obj.journey_stops = request.data['journey_stops']
+
+            request_obj.save()
+
+            return Response(
+                self.get_serializer(request_obj).data, status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=["post"])
+    def update_staff_count(self, request, request_id=None):
+        try:
+            request_obj = self.get_object()
+            request_obj.staff_count = request.data.get(
+                "staff_count", request_obj.staff_count
+            )
+            request_obj.save()
+
+            return Response(
+                self.get_serializer(request_obj).data, status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)

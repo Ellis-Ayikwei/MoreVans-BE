@@ -116,31 +116,43 @@ DATABASES = {
 }
 
 import os
-
-os.environ["GDAL_DATA"] = r"C:\OSGeo4W\share\gdal"
-os.environ["PROJ_LIB"] = r"C:\OSGeo4W\share\proj"
-os.environ["PATH"] = r"C:\OSGeo4W\bin;" + os.environ["PATH"]
-
-if os.name == "nt":
-    import platform
-
-    OSGEO4W = r"C:\OSGeo4W"
-    # if '64' in platform.architecture()[0]:
-    #     OSGEO4W += "64"
-    assert os.path.isdir(OSGEO4W), "Directory does not exist: " + OSGEO4W
-    os.environ["OSGEO4W_ROOT"] = OSGEO4W
-    os.environ["GDAL_DATA"] = OSGEO4W + r"\share\gdal"
-    os.environ["PROJ_LIB"] = OSGEO4W + r"\share\proj"
-    os.environ["PATH"] = OSGEO4W + r"\bin;" + os.environ["PATH"]
-
-
-# GeoDjango Settings
-GDAL_LIBRARY_PATH = r"C:\OSGeo4W\bin\gdal310.dll"
-GEOS_LIBRARY_PATH = os.environ.get("GEOS_LIBRARY_PATH", r"C:\OSGeo4W\bin\geos_c.dll")
-
+import platform
 from ctypes import CDLL
 
-lib_path = r"C:\OSGeo4W\bin\gdal310.dll"
+# Detect OS
+is_windows = os.name == "nt"
+is_linux = os.name == "posix" and platform.system() == "Linux"
+
+if is_windows:
+    OSGEO4W = r"C:\OSGeo4W"
+    assert os.path.isdir(OSGEO4W), f"Directory does not exist: {OSGEO4W}"
+
+    os.environ["OSGEO4W_ROOT"] = OSGEO4W
+    os.environ["GDAL_DATA"] = os.path.join(OSGEO4W, "share", "gdal")
+    os.environ["PROJ_LIB"] = os.path.join(OSGEO4W, "share", "proj")
+    os.environ["PATH"] = os.path.join(OSGEO4W, "bin") + ";" + os.environ["PATH"]
+
+    # GeoDjango Settings
+    GDAL_LIBRARY_PATH = os.path.join(OSGEO4W, "bin", "gdal310.dll")
+    GEOS_LIBRARY_PATH = os.environ.get(
+        "GEOS_LIBRARY_PATH", os.path.join(OSGEO4W, "bin", "geos_c.dll")
+    )
+    lib_path = GDAL_LIBRARY_PATH
+
+elif is_linux:
+    # You may need to adjust these paths based on how GDAL is installed (e.g. via apt, conda, or custom build)
+    os.environ["GDAL_DATA"] = "/usr/share/gdal"
+    os.environ["PROJ_LIB"] = "/usr/share/proj"
+
+    # GeoDjango Settings
+    GDAL_LIBRARY_PATH = "/usr/lib/libgdal.so"
+    GEOS_LIBRARY_PATH = os.environ.get("GEOS_LIBRARY_PATH", "/usr/lib/libgeos_c.so")
+    lib_path = GDAL_LIBRARY_PATH
+
+else:
+    raise EnvironmentError("Unsupported operating system")
+
+# Load GDAL with ctypes
 try:
     gdal_lib = CDLL(lib_path)
     print("GDAL loaded successfully")

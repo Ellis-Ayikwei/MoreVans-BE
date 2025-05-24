@@ -5,3 +5,7 @@ gunicorn
 python-dotenv
 requests
 Pillow
+djangorestframework-simplejwt
+viewflow
+django-cors-headers
+channels

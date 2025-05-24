@@ -16,4 +16,6 @@ router.register(r"common-items", CommonItemViewset)
 
 urlpatterns = [
     path("", include(router.urls)),
+    # path('requests/<uuid:request_id>/update_details/', RequestViewSet.as_view({'post': 'update_details'}), name='request-update-details'),
+    # path('requests/<uuid:request_id>/update_staff_count/', RequestViewSet.as_view({'post': 'update_staff_count'}), name='request-update-staff-count'),
 ]
