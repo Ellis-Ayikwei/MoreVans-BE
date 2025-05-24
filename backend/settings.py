@@ -118,47 +118,44 @@ DATABASES = {
 import os
 import platform
 from ctypes import CDLL
+import ctypes.util
 
-# Detect OS
-is_windows = os.name == "nt"
-is_linux = os.name == "posix" and platform.system() == "Linux"
-
-if is_windows:
+if os.name == "nt":
+    # Windows configuration
     OSGEO4W = r"C:\OSGeo4W"
-    assert os.path.isdir(OSGEO4W), f"Directory does not exist: {OSGEO4W}"
+    assert os.path.isdir(OSGEO4W), "Directory does not exist: " + OSGEO4W
 
     os.environ["OSGEO4W_ROOT"] = OSGEO4W
     os.environ["GDAL_DATA"] = os.path.join(OSGEO4W, "share", "gdal")
     os.environ["PROJ_LIB"] = os.path.join(OSGEO4W, "share", "proj")
     os.environ["PATH"] = os.path.join(OSGEO4W, "bin") + ";" + os.environ["PATH"]
 
-    # GeoDjango Settings
+    # GeoDjango paths
     GDAL_LIBRARY_PATH = os.path.join(OSGEO4W, "bin", "gdal310.dll")
     GEOS_LIBRARY_PATH = os.environ.get(
         "GEOS_LIBRARY_PATH", os.path.join(OSGEO4W, "bin", "geos_c.dll")
     )
-    lib_path = GDAL_LIBRARY_PATH
-
-elif is_linux:
-    # You may need to adjust these paths based on how GDAL is installed (e.g. via apt, conda, or custom build)
-    os.environ["GDAL_DATA"] = "/usr/share/gdal"
-    os.environ["PROJ_LIB"] = "/usr/share/proj"
-
-    # GeoDjango Settings
-    GDAL_LIBRARY_PATH = "/usr/lib/libgdal.so"
-    GEOS_LIBRARY_PATH = os.environ.get("GEOS_LIBRARY_PATH", "/usr/lib/libgeos_c.so")
-    lib_path = GDAL_LIBRARY_PATH
 
 else:
-    raise EnvironmentError("Unsupported operating system")
+    # Linux/Unix configuration
+    GDAL_LIBRARY_PATH = ctypes.util.find_library("gdal")
+    GEOS_LIBRARY_PATH = ctypes.util.find_library("geos_c")
 
-# Load GDAL with ctypes
+    if not GDAL_LIBRARY_PATH:
+        raise OSError("Could not find GDAL library on Linux")
+    if not GEOS_LIBRARY_PATH:
+        raise OSError("Could not find GEOS library on Linux")
+
+# Load GDAL dynamically to ensure it works
 try:
-    gdal_lib = CDLL(lib_path)
-    print("GDAL loaded successfully")
+    gdal_lib = CDLL(GDAL_LIBRARY_PATH)
+    print("GDAL loaded successfully:", GDAL_LIBRARY_PATH)
 except OSError as e:
     print("Error loading GDAL:", e)
 
+# Optional: Set the variables explicitly for Django (if using settings)
+os.environ["GDAL_LIBRARY_PATH"] = GDAL_LIBRARY_PATH
+os.environ["GEOS_LIBRARY_PATH"] = GEOS_LIBRARY_PATH
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
