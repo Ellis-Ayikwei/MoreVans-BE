@@ -52,7 +52,6 @@ router.register(r"jobs", JobViewSet)
 router.register(r"bids", JobBidViewSet)
 
 urlpatterns = [
-    path("admin/", admin.site.urls),
     # Geocoding endpoints outside API path to bypass authentication issues
     path(
         "geocoding/google-autocomplete/",
@@ -98,6 +97,7 @@ urlpatterns = [
         "morevans/api/v1/",
         include(
             [
+                path("admin/", admin.site.urls),
                 # Include router URLs
                 path("", include(router.urls)),
                 # Status endpoint
