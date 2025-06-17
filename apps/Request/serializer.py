@@ -9,13 +9,14 @@ from apps.RequestItems.models import RequestItem
 from apps.JourneyStop.models import JourneyStop
 from apps.CommonItems.models import CommonItem, ItemCategory
 from apps.CommonItems.serializers import CommonItemSerializer, ItemCategorySerializer
-from apps.JourneyStop.serializer import JourneyStopSerializer
+from apps.JourneyStop.serializers import JourneyStopSerializer
 from apps.Location.models import Location
 from apps.Location.serializer import LocationSerializer
 from apps.Location.models import Location
 from apps.Driver.serializer import DriverSerializer
 from datetime import datetime, timedelta
 from django.utils import timezone
+from decimal import Decimal, InvalidOperation
 
 
 class MoveMilestoneSerializer(serializers.ModelSerializer):
@@ -85,6 +86,7 @@ class RequestSerializer(serializers.ModelSerializer):
     photo_urls = serializers.JSONField(required=False, allow_null=True)
     all_locations = serializers.SerializerMethodField()
     milestones = MoveMilestoneSerializer(many=True, required=False)
+    user_id = serializers.UUIDField(write_only=True, required=False)
 
     class Meta:
         model = Request
@@ -136,6 +138,7 @@ class RequestSerializer(serializers.ModelSerializer):
             "updated_at",
             "stops",
             "milestones",
+            "user_id",
         ]
         extra_kwargs = {"user": {"read_only": True, "required": False}}
 
@@ -150,25 +153,56 @@ class RequestSerializer(serializers.ModelSerializer):
         request_type = data.get("request_type")
         journey_stops = data.get("journey_stops", [])
 
-        # if not journey_stops:
-        #     raise serializers.ValidationError(
-        #         "journey_stops is required for all request types"
-        #     )
+        # Only validate journey stops if this is not a journey type request
+        # For journey type requests, stops will be validated in step 2
+        if journey_stops and request_type != "journey":
+            for stop in journey_stops:
+                location = stop.get("location", {})
+                if location:
+                    # Handle coordinates
+                    if "latitude" in location and location["latitude"] is not None:
+                        try:
+                            location["latitude"] = round(
+                                Decimal(str(location["latitude"])), 16
+                            )
+                        except (InvalidOperation, TypeError):
+                            raise serializers.ValidationError(
+                                {
+                                    "journey_stops": [
+                                        {
+                                            "location": {
+                                                "latitude": "Invalid latitude value"
+                                            }
+                                        }
+                                    ]
+                                }
+                            )
 
-        # Validate that there's at least one pickup and one dropoff stop
-        pickup_stops = [stop for stop in journey_stops if stop.get("type") == "pickup"]
-        dropoff_stops = [
-            stop for stop in journey_stops if stop.get("type") == "dropoff"
-        ]
+                    if "longitude" in location and location["longitude"] is not None:
+                        try:
+                            location["longitude"] = round(
+                                Decimal(str(location["longitude"])), 16
+                            )
+                        except (InvalidOperation, TypeError):
+                            raise serializers.ValidationError(
+                                {
+                                    "journey_stops": [
+                                        {
+                                            "location": {
+                                                "longitude": "Invalid longitude value"
+                                            }
+                                        }
+                                    ]
+                                }
+                            )
 
-        # if not pickup_stops:
-        #     raise serializers.ValidationError("At least one pickup stop is required")
-        # if not dropoff_stops:
-        #     raise serializers.ValidationError("At least one dropoff stop is required")
-
-        # For instant requests, validate moving_items
-        # if request_type == "instant" and not data.get("moving_items"):
-        #     raise serializers.ValidationError("Instant requests require moving_items")
+                    # Set default values for required fields if not provided
+                    if not location.get("contact_name"):
+                        location["contact_name"] = data.get("contact_name", "")
+                    if not location.get("contact_phone"):
+                        location["contact_phone"] = data.get("contact_phone", "")
+                    if not location.get("postcode"):
+                        location["postcode"] = ""
 
         return data
 
@@ -176,6 +210,7 @@ class RequestSerializer(serializers.ModelSerializer):
         items_data = validated_data.pop("items", [])
         journey_stops_data = validated_data.pop("journey_stops", [])
         moving_items_data = validated_data.pop("moving_items", [])
+        request_type = validated_data.get("request_type")
 
         # Remove any potential reverse relation fields that might cause issues
         if "items" in validated_data:
@@ -183,14 +218,36 @@ class RequestSerializer(serializers.ModelSerializer):
         if "stops" in validated_data:
             validated_data.pop("stops")
 
-        # Get user from context (or use specified user for admin usage)
+        # Handle user assignment logic
         user = validated_data.get("user", None)
-        if not user and "request" in self.context:
-            user = self.context["request"].user
+
+        # If no user is explicitly provided, check the request context
+        if user is None and "request" in self.context:
+            request_user = self.context["request"].user
+
+            if request_user.is_authenticated:
+                # Logged-in user: assign to request
+                validated_data["user"] = request_user
+                print(
+                    f"Creating request for authenticated user: {request_user.username}"
+                )
+            else:
+                # Anonymous user: set to None for later assignment
+                validated_data["user"] = None
+                print("Creating request for anonymous user")
+        else:
+            # Explicit user provided or no context - use as is (could be None)
             validated_data["user"] = user
+            print(f"Creating request with explicit user: {user}")
 
         # Create the request
         request = Request.objects.create(**validated_data)
+
+        # Only process journey stops if this is not a journey type request
+        # For journey type requests, stops will be processed in step 2
+        if journey_stops_data and request_type != "journey":
+            for i, stop_data in enumerate(journey_stops_data):
+                self._process_journey_stop(request, stop_data, i)
 
         # Create items
         for item_data in items_data:
@@ -204,14 +261,7 @@ class RequestSerializer(serializers.ModelSerializer):
                 except ItemCategory.DoesNotExist:
                     pass
 
-        # Process journey stops if present
-        journey_stops_data = validated_data.pop("journey_stops", None)
-        if journey_stops_data and isinstance(journey_stops_data, list):
-            for i, stop_data in enumerate(journey_stops_data):
-                self._process_journey_stop(request, stop_data, i)
-
         # Process moving items if no journey stops or items weren't processed
-        moving_items_data = validated_data.pop("moving_items", None)
         if moving_items_data and isinstance(moving_items_data, list):
             # Find a pickup stop or create one if none exists
             pickup_stop = JourneyStop.objects.filter(
@@ -263,49 +313,101 @@ class RequestSerializer(serializers.ModelSerializer):
         return instance
 
     def _process_journey_stop(self, request, stop_data, sequence):
-        # Helper function to handle empty time strings
-        def clean_time_value(value):
-            """Convert empty strings to None for time fields"""
-            if value == "":
-                return None
-            return value
-
-        # Helper function to handle empty numeric strings
-        def clean_numeric_value(value, default=1):
-            """Convert empty strings to default value for numeric fields"""
-            if value == "" or value is None:
-                return default
+        """Process a journey stop and its associated items"""
+        # Extract and clean data
+        floor = stop_data.get("floor", 0)
+        if isinstance(floor, str):
             try:
-                return int(value)
+                floor = int(floor)
+            except ValueError:
+                floor = 0
+
+        number_of_rooms = stop_data.get("number_of_rooms", 1)
+        if isinstance(number_of_rooms, str):
+            try:
+                number_of_rooms = int(number_of_rooms)
+            except ValueError:
+                number_of_rooms = 1
+
+        number_of_floors = stop_data.get("number_of_floors", 1)
+        if isinstance(number_of_floors, str):
+            try:
+                number_of_floors = int(number_of_floors)
+            except ValueError:
+                number_of_floors = 1
+
+        # Clean estimated_time
+        estimated_time = None
+        if "estimated_time" in stop_data:
+            try:
+                time_str = stop_data["estimated_time"]
+                if isinstance(time_str, str):
+                    # Parse time string (HH:MM format)
+                    hours, minutes = map(int, time_str.split(":"))
+                    estimated_time = (
+                        timezone.now()
+                        .replace(hour=hours, minute=minutes, second=0, microsecond=0)
+                        .time()
+                    )
             except (ValueError, TypeError):
-                return default
+                pass
 
-        # Clean up time fields - convert empty strings to None
-        estimated_time = clean_time_value(stop_data.get("estimatedTime", None))
-        scheduled_time = clean_time_value(stop_data.get("scheduledTime", None))
-        completed_time = clean_time_value(stop_data.get("completedTime", None))
+        # Create location first
+        location_data = stop_data.get("location", {})
+        if not isinstance(location_data, dict):
+            raise serializers.ValidationError(
+                {"location": "Location data must be a dictionary"}
+            )
 
-        # Clean up numeric fields with default values
-        number_of_rooms = clean_numeric_value(
-            stop_data.get("number_of_rooms", None), default=1
+        # Ensure location has required fields with defaults
+        location_data.setdefault("contact_name", request.contact_name or "")
+        location_data.setdefault("contact_phone", request.contact_phone or "")
+        location_data.setdefault("postcode", "")
+
+        # Handle coordinates
+        if "latitude" in location_data and location_data["latitude"] is not None:
+            try:
+                location_data["latitude"] = round(
+                    Decimal(str(location_data["latitude"])), 16
+                )
+            except (InvalidOperation, TypeError):
+                raise serializers.ValidationError(
+                    {"location": {"latitude": "Invalid latitude value"}}
+                )
+
+        if "longitude" in location_data and location_data["longitude"] is not None:
+            try:
+                location_data["longitude"] = round(
+                    Decimal(str(location_data["longitude"])), 16
+                )
+            except (InvalidOperation, TypeError):
+                raise serializers.ValidationError(
+                    {"location": {"longitude": "Invalid longitude value"}}
+                )
+
+        # Create location with required fields
+        location = Location.objects.create(
+            address=location_data.get("address", ""),
+            postcode=location_data.get("postcode", ""),
+            latitude=location_data.get("latitude"),
+            longitude=location_data.get("longitude"),
+            contact_name=location_data.get("contact_name", ""),
+            contact_phone=location_data.get("contact_phone", ""),
+            special_instructions=location_data.get("special_instructions", ""),
         )
-        number_of_floors = clean_numeric_value(
-            stop_data.get("number_of_floors", None), default=1
-        )
-        floor = clean_numeric_value(stop_data.get("floor", None), default=0)
 
         # Create the stop
         stop = JourneyStop.objects.create(
             request=request,
             external_id=stop_data.get("id", ""),
             type=stop_data.get("type", "pickup"),
-            address=stop_data.get("address", ""),  # Map location to address
+            location=location,
             unit_number=stop_data.get("unit_number", ""),
             floor=floor,
             has_elevator=stop_data.get("has_elevator", False),
             parking_info=stop_data.get("parking_info", ""),
             instructions=stop_data.get("instructions", ""),
-            estimated_time=estimated_time,  # Use the cleaned value
+            scheduled_time=estimated_time,
             property_type=stop_data.get("property_type", "house"),
             number_of_rooms=number_of_rooms,
             number_of_floors=number_of_floors,
@@ -324,20 +426,6 @@ class RequestSerializer(serializers.ModelSerializer):
                 for item_data in items_to_process:
                     # Create the item and associate it with this pickup stop
                     item = self._process_item(request, stop, item_data)
-
-        # Process linked items for dropoff stops
-        if stop.type == "dropoff" and "linked_items" in stop_data:
-            linked_item_ids = stop_data["linked_items"]
-            if linked_item_ids:
-                # Find all items with these IDs and link them to this dropoff stop
-                for item_id in linked_item_ids:
-                    try:
-                        item = RequestItem.objects.get(id=item_id, request=request)
-                        item.dropoff_stop = stop
-                        item.save()
-                    except RequestItem.DoesNotExist:
-                        # Log that the item wasn't found - could add logger here
-                        pass
 
         return stop
 

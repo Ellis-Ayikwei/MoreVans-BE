@@ -10,6 +10,8 @@ from rest_framework_simplejwt.views import (
     TokenVerifyView,
 )
 from apps.Job.views import JobViewSet, JobBidViewSet
+from django.conf import settings
+from django.conf.urls.static import static
 
 # Import the ViewSets from Vehicle and Driver apps
 from apps.Vehicle.views import (
@@ -26,6 +28,17 @@ from apps.Driver.views import (
     DriverInfringementViewSet,
 )
 
+# Import Location views for testing
+from apps.Location.views import (
+    google_address_autocomplete_simple,
+    postcode_suggestions_simple,
+    google_place_details,
+    geocode_address,
+    postcode_address_lookup_enhanced,
+    postcode_address_lookup,
+    simple_postcode_addresses,
+)
+
 router = routers.DefaultRouter(trailing_slash=True)
 
 # Register Vehicle app ViewSets
@@ -34,18 +47,52 @@ router.register(r"vehicle-documents", VehicleDocumentViewSet)
 router.register(r"vehicle-inspections", VehicleInspectionViewSet)
 router.register(r"maintenance-records", MaintenanceRecordViewSet)
 
-# Register Driver app ViewSets
-router.register(r"drivers", DriverViewSet)
-router.register(r"driver-locations", DriverLocationViewSet)
-router.register(r"driver-availability", DriverAvailabilityViewSet)
-router.register(r"driver-documents", DriverDocumentViewSet)
-router.register(r"driver-infringements", DriverInfringementViewSet)
 
 router.register(r"jobs", JobViewSet)
 router.register(r"bids", JobBidViewSet)
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    # Geocoding endpoints outside API path to bypass authentication issues
+    path(
+        "geocoding/google-autocomplete/",
+        google_address_autocomplete_simple,
+        name="geocoding_google_autocomplete",
+    ),
+    path(
+        "geocoding/postcode-suggestions/",
+        postcode_suggestions_simple,
+        name="geocoding_postcode_suggestions",
+    ),
+    path(
+        "geocoding/google-place-details/",
+        google_place_details,
+        name="geocoding_google_place_details",
+    ),
+    path(
+        "geocoding/geocode-address/", geocode_address, name="geocoding_geocode_address"
+    ),
+    path(
+        "geocoding/postcode-addresses-simple/",
+        postcode_address_lookup,
+        name="geocoding_postcode_addresses_simple",
+    ),
+    path(
+        "geocoding/postcode-addresses/",
+        postcode_address_lookup_enhanced,
+        name="geocoding_postcode_addresses",
+    ),
+    path(
+        "geocoding/postcode-addresses-demo/",
+        simple_postcode_addresses,
+        name="geocoding_postcode_addresses_demo",
+    ),
+    # Test endpoint outside API path
+    path(
+        "test/google-autocomplete/",
+        google_address_autocomplete_simple,
+        name="test_google_autocomplete",
+    ),
     # API routes with prefix
     path(
         "morevans/api/v1/",
@@ -64,9 +111,18 @@ urlpatterns = [
                 # Request app URLs
                 path("", include("apps.Request.urls")),
                 # User app URLs
-                path("user/", include("apps.User.urls")),
+                path("", include("apps.User.urls")),
                 # pricing app URLs
                 path("", include("apps.pricing.urls")),
+                # location app URLs
+                path("", include("apps.Location.urls")),
+                # payment app URLs
+                path("", include("apps.Payment.urls")),
+                # provider app URLs
+                path("", include("apps.Provider.urls")),
+                path("", include("apps.Driver.urls")),
+                # Media files under API prefix
+                *static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT),
             ]
         ),
     ),

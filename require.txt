@@ -11,3 +11,5 @@ django-cors-headers
 channels
 django-fsm
 holidays
+stripe
+python-dotenv

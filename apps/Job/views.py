@@ -1,5 +1,5 @@
 from django.shortcuts import render
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -11,68 +11,103 @@ from apps.Request.models import Request
 from apps.Bidding.models import Bid
 from apps.Bidding.serializers import BidSerializer
 from apps.Request.views import RequestViewSet
+from decimal import Decimal
 
 # Create your views here.
 
 
 class JobViewSet(viewsets.ModelViewSet):
-    serializer_class = JobSerializer
-    permission_classes = [IsAuthenticated]
+    """
+    ViewSet for viewing and editing Job instances.
+    """
     queryset = Job.objects.all()
+    serializer_class = JobSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        user = self.request.user
         queryset = Job.objects.all()
+        status_param = self.request.query_params.get("status", None)
+        is_instant = self.request.query_params.get("is_instant", None)
 
-        # Add filters based on query parameters
-        status_filter = self.request.query_params.get("status", None)
-        if status_filter:
-            queryset = queryset.filter(status=status_filter)
+        if status_param:
+            queryset = queryset.filter(status=status_param)
+        if is_instant is not None:
+            is_instant_bool = is_instant.lower() == "true"
+            queryset = queryset.filter(is_instant=is_instant_bool)
 
-        # If user parameter is specified, override default user filtering
-        user_filter = self.request.query_params.get("user_filter", "on")
-        if user_filter.lower() == "off":
-            return queryset.order_by("-created_at")
-
-        try:
-            if hasattr(user, "provider"):
-                # For debugging purposes, let's see all jobs by default
-                # but still allow filtering with query parameters
-                provider_filter = self.request.query_params.get(
-                    "provider_filter", "all"
-                )
-
-                if provider_filter == "unbid":
-                    # Original logic: only jobs they haven't bid on
-                    return (
-                        queryset.filter(
-                            status="active", bidding_end_time__gt=timezone.now()
-                        )
-                        .exclude(bids__provider=user.provider)
-                        .order_by("-created_at")
-                    )
-                else:
-                    # Show all jobs
-                    return queryset.order_by("-created_at")
-            else:
-                # Customers see their own jobs by default
-                # But can be overridden with query params
-                customer_filter = self.request.query_params.get(
-                    "customer_filter", "own"
-                )
-
-                if customer_filter == "own":
-                    return queryset.filter(request__user=user).order_by("-created_at")
-                else:
-                    return queryset.order_by("-created_at")
-        except Exception as e:
-            print(f"Error in JobViewSet.get_queryset: {str(e)}")
-            # If there's any error, show all jobs for debugging
-            return Job.objects.all()
+        return queryset
 
     def perform_create(self, serializer):
         request_id = self.request.data.get("request")
         request = Request.objects.get(id=request_id)
+
+    @action(detail=True, methods=['post'])
+    def make_biddable(self, request, pk=None):
+        """
+        Convert a job to a biddable job.
+        
+        Expected request body:
+        {
+            "bidding_duration_hours": 24,  # Optional, defaults to 24
+            "minimum_bid": 100.00  # Optional
+        }
+        """
+        job = self.get_object()
+        
+        try:
+            bidding_duration_hours = int(request.data.get('bidding_duration_hours', 24))
+            minimum_bid = request.data.get('minimum_bid')
+            if minimum_bid:
+                minimum_bid = Decimal(str(minimum_bid))
+            
+            job.make_biddable(
+                bidding_duration_hours=bidding_duration_hours,
+                minimum_bid=minimum_bid
+            )
+            
+            return Response({
+                'status': 'success',
+                'message': 'Job converted to biddable',
+                'job': JobSerializer(job).data
+            })
+            
+        except ValueError as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=True, methods=['post'])
+    def make_instant(self, request, pk=None):
+        """
+        Convert a job to an instant job.
+        """
+        job = self.get_object()
+        
+        try:
+            job.make_instant()
+            
+            return Response({
+                'status': 'success',
+                'message': 'Job converted to instant',
+                'job': JobSerializer(job).data
+            })
+            
+        except ValueError as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=True, methods=["post"])
     def accept_bid(self, request, pk=None):
@@ -91,11 +126,15 @@ class JobViewSet(viewsets.ModelViewSet):
                 {"error": "Bid not found"}, status=status.HTTP_404_NOT_FOUND
             )
 
-        if job.request.customer != request.user:
-            return Response(
-                {"error": "Only the job owner can accept bids"},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+        # if job.request.customer != request.user:
+        #     return Response(
+        #         {"error": "Only the job owner can accept bids"},
+        #         status=status.HTTP_403_FORBIDDEN,
+        #     )
+
+        # assign provider to job
+        job.assigned_provider = bid.provider
+        job.save()
 
         # Update job and bid status
         job.status = "assigned"
@@ -145,6 +184,23 @@ class JobViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=True, methods=["post"])
+    def accept(self, request, pk=None):
+        job = self.get_object()
+        job.accept(request.user)
+        return Response({"status": "Job accepted"})
+
+    @action(detail=False, methods=["get"])
+    def assign_provider(self, request, pk=None):
+        """Assign a provider to a job"""
+        from apps.Provider.models import ServiceProvider
+        job_id = request.query_params.get("job_id")
+        job = Job.objects.get(id=job_id)
+        provider_id = request.data.get("provider_id")
+        provider = ServiceProvider.objects.get(id=provider_id)
+        job.assigned_provider = provider
+        job.save()
+        return Response({"status": "Provider assigned"})
 
 class JobBidViewSet(viewsets.ModelViewSet):
     serializer_class = BidSerializer

@@ -262,6 +262,7 @@ class TypingIndicator(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     started_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
+    objects: models.Manager = models.Manager()
     
     class Meta:
         unique_together = ('conversation', 'user')

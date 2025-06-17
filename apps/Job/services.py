@@ -135,3 +135,52 @@ class JobTimelineService:
             metadata=metadata,
             created_by=user,
         )
+
+
+class JobService:
+    @staticmethod
+    def create_from_request(request, is_instant=False, bidding_duration_hours=24, minimum_bid=None):
+        """
+        Create a job from a request.
+        
+        Args:
+            request: The Request instance to create the job from
+            is_instant (bool): Whether this should be an instant job
+            bidding_duration_hours (int): Duration of bidding period if not instant
+            minimum_bid (Decimal): Minimum bid amount if not instant
+            
+        Returns:
+            Job: The created job instance
+        """
+        # Create the job
+        job = Job.objects.create(
+            request=request,
+            title=f"Move request from {request.pickup_location.city if request.pickup_location else 'Unknown'} to {request.dropoff_location.city if request.dropoff_location else 'Unknown'}",
+            description="Moving request",
+            status="draft",
+            price=request.base_price,
+            is_instant=is_instant
+        )
+        
+        # Create initial timeline event
+        TimelineEvent.objects.create(
+            job=job,
+            event_type="created",
+            description="Job created from request",
+            metadata={
+                "request_id": str(request.id),
+                "is_instant": is_instant
+            }
+        )
+        
+        # If instant, make it instant
+        if is_instant:
+            job.make_instant()
+        # Otherwise, make it biddable
+        else:
+            job.make_biddable(
+                bidding_duration_hours=bidding_duration_hours,
+                minimum_bid=minimum_bid
+            )
+            
+        return job

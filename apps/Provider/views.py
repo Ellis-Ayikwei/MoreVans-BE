@@ -1,4 +1,4 @@
-from django.shortcuts import render
+from django.shortcuts import render, get_object_or_404
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -7,7 +7,9 @@ from .models import (
     ServiceProvider,
     ServiceArea,
     InsurancePolicy,
-    ProviderVehicle,
+    ProviderDocument,
+    ProviderReview,
+    ProviderPayment,
     SavedJob,
     WatchedJob,
 )
@@ -15,11 +17,19 @@ from .serializer import (
     ServiceProviderSerializer,
     ServiceAreaSerializer,
     InsurancePolicySerializer,
-    ProviderVehicleSerializer,
+    ProviderDocumentSerializer,
+    ProviderReviewSerializer,
+    ProviderPaymentSerializer,
     SavedJobSerializer,
     WatchedJobSerializer,
 )
-from Job.serializers import JobSerializer
+from apps.Job.serializers import JobSerializer
+from apps.Job.models import Job
+from apps.User.models import User
+from django.db import transaction
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class ServiceProviderViewSet(viewsets.ModelViewSet):
@@ -32,19 +42,260 @@ class ServiceProviderViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = ServiceProvider.objects.all()
-        user_id = self.request.query_params.get("user", None)
-        verification_status = self.request.query_params.get("verification_status", None)
-        service_category = self.request.query_params.get("service_category", None)
-
-        if user_id:
-            queryset = queryset.filter(user_id=user_id)
-        if verification_status:
-            queryset = queryset.filter(verification_status=verification_status)
-        if service_category:
-            queryset = queryset.filter(service_categories__id=service_category)
-
+        queryset = super().get_queryset()
+        if not self.request.user.is_staff:
+            return queryset.filter(user=self.request.user)
         return queryset
+
+    @action(detail=True, methods=["post"])
+    def activate(self, request, pk=None):
+        provider = self.get_object()
+        provider.status = "active"
+        provider.save()
+        return Response({"status": "provider activated"})
+
+    @action(detail=True, methods=["post"])
+    def suspend(self, request, pk=None):
+        provider = self.get_object()
+        provider.status = "suspended"
+        provider.save()
+        return Response({"status": "provider suspended"})
+
+    @action(detail=True, methods=["post"])
+    def verify(self, request, pk=None):
+        provider = self.get_object()
+        provider.verification_status = "verified"
+        provider.last_verified = timezone.now()
+        provider.save()
+        return Response({"status": "provider verified"})
+
+    @action(detail=True, methods=["get", "post"])
+    def documents(self, request, pk=None):
+        provider = self.get_object()
+        if request.method == "GET":
+            documents = provider.documents.all()
+            serializer = ProviderDocumentSerializer(
+                documents, many=True, context={"request": request}
+            )
+            return Response(serializer.data)
+        elif request.method == "POST":
+            serializer = ProviderDocumentSerializer(
+                data=request.data, context={"request": request}
+            )
+            if serializer.is_valid():
+                serializer.save(provider=provider)
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=["post"])
+    def verify_document(self, request, pk=None):
+        """
+        Verify a provider's document.
+        """
+        provider = self.get_object()
+        document_id = request.data.get("document_id")
+        verification_note = request.data.get("verification_note")
+
+        try:
+            document = provider.documents.get(id=document_id)
+            document.is_verified = True
+            document.rejection_reason = None
+            document.status = "verified"
+            if verification_note:
+                document.notes = verification_note
+            document.save()
+            serializer = ProviderDocumentSerializer(document)
+            return Response(serializer.data)
+        except ProviderDocument.DoesNotExist:
+            return Response(
+                {"detail": "Document not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=True, methods=["post"])
+    def reject_document(self, request, pk=None):
+        """
+        Reject a provider's document.
+        """
+        provider = self.get_object()
+        document_id = request.data.get("document_id")
+        rejection_reason = request.data.get("rejection_reason")
+
+        if not rejection_reason:
+            return Response(
+                {"detail": "Rejection reason is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            document = provider.documents.get(id=document_id)
+            document.is_verified = False
+            document.rejection_reason = rejection_reason
+            document.status = "rejected"
+            document.save()
+            serializer = ProviderDocumentSerializer(document)
+            return Response(serializer.data)
+        except ProviderDocument.DoesNotExist:
+            return Response(
+                {"detail": "Document not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=True, methods=["post"])
+    def update_document_status(self, request, pk=None):
+        """
+        Update the status of a provider's document.
+        """
+        provider = self.get_object()
+        document_id = request.data.get("document_id")
+        new_status = request.data.get("status")
+        notes = request.data.get("notes")
+
+        if not new_status:
+            return Response(
+                {"detail": "Status is required."}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if new_status not in dict(ProviderDocument.DOCUMENT_STATUS):
+            return Response(
+                {
+                    "detail": f"Invalid status. Must be one of: {', '.join(dict(ProviderDocument.DOCUMENT_STATUS).keys())}"
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            document = provider.documents.get(id=document_id)
+            document.status = new_status
+            if notes:
+                document.notes = notes
+            if new_status == "verified":
+                document.is_verified = True
+                document.rejection_reason = None
+            elif new_status == "rejected":
+                document.is_verified = False
+                if not notes:
+                    return Response(
+                        {"detail": "Notes are required when rejecting a document."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                document.rejection_reason = notes
+            document.save()
+            serializer = ProviderDocumentSerializer(document)
+            return Response(serializer.data)
+        except ProviderDocument.DoesNotExist:
+            return Response(
+                {"detail": "Document not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+
+    @action(detail=True, methods=["get"])
+    def reviews(self, request, pk=None):
+        provider = self.get_object()
+        reviews = provider.reviews.all()
+        serializer = ProviderReviewSerializer(reviews, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["get"])
+    def payments(self, request, pk=None):
+        provider = self.get_object()
+        payments = provider.payments.all()
+        serializer = ProviderPaymentSerializer(payments, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["get"])
+    def saved_jobs(self, request, pk=None):
+        provider = self.get_object()
+        saved_jobs = SavedJob.objects.filter(provider=provider.user)
+        serializer = SavedJobSerializer(saved_jobs, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["get"])
+    def watched_jobs(self, request, pk=None):
+        provider = self.get_object()
+        watched_jobs = WatchedJob.objects.filter(provider=provider.user)
+        serializer = WatchedJobSerializer(watched_jobs, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=["get"])
+    def get_provider_by_user_id(self, request):
+        """Get provider by user id"""
+        user_id = request.query_params.get("user_id")
+        provider = ServiceProvider.objects.get(user_id=user_id)
+        serializer = ServiceProviderSerializer(provider)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=["get"])
+    def accept_job(self, request):
+        """Accept a job"""
+        job_id = request.query_params.get("job_id")
+        job = Job.objects.get(id=job_id)
+        job.accept_bid(request.user)
+        return Response({"status": "Job accepted"})
+
+    @action(
+        detail=False, methods=["post"], permission_classes=[permissions.IsAdminUser]
+    )
+    def sync_provider_users(self, request):
+        """
+        Sync users with user_type 'provider' to the ServiceProvider table.
+        This will:
+        1. Find all users with user_type 'provider'
+        2. Create ServiceProvider entries for those who don't have one
+        3. Return statistics about the sync operation
+        """
+        try:
+            with transaction.atomic():
+                # Get all users with user_type 'provider'
+                provider_users = User.objects.filter(user_type="provider")
+
+                stats = {
+                    "total_provider_users": provider_users.count(),
+                    "existing_entries": 0,
+                    "new_entries": 0,
+                    "errors": [],
+                }
+
+                for user in provider_users:
+                    try:
+                        # Check if ServiceProvider entry exists
+                        provider, created = ServiceProvider.objects.get_or_create(
+                            user=user,
+                            defaults={
+                                "business_type": "sole_trader",  # Default business type
+                                "company_name": f"{user.first_name}'s Service",  # Default company name
+                                "verification_status": "unverified",  # Default verification status
+                            },
+                        )
+
+                        if created:
+                            stats["new_entries"] += 1
+                            logger.info(
+                                f"Created new ServiceProvider entry for user {user.id}"
+                            )
+                        else:
+                            stats["existing_entries"] += 1
+                            logger.info(
+                                f"ServiceProvider entry already exists for user {user.id}"
+                            )
+
+                    except Exception as e:
+                        error_msg = f"Error processing user {user.id}: {str(e)}"
+                        stats["errors"].append(error_msg)
+                        logger.error(error_msg)
+
+                return Response(
+                    {
+                        "status": "success",
+                        "message": "Provider sync completed",
+                        "statistics": stats,
+                    }
+                )
+
+        except Exception as e:
+            error_msg = f"Error during provider sync: {str(e)}"
+            logger.error(error_msg)
+            return Response(
+                {"status": "error", "message": error_msg},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 class ServiceAreaViewSet(viewsets.ModelViewSet):
@@ -57,16 +308,10 @@ class ServiceAreaViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = ServiceArea.objects.all()
-        provider_id = self.request.query_params.get("provider", None)
-        is_primary = self.request.query_params.get("is_primary", None)
-
+        queryset = super().get_queryset()
+        provider_id = self.request.query_params.get("provider_id")
         if provider_id:
-            queryset = queryset.filter(provider_id=provider_id)
-        if is_primary is not None:
-            is_primary_bool = is_primary.lower() == "true"
-            queryset = queryset.filter(is_primary=is_primary_bool)
-
+            return queryset.filter(provider_id=provider_id)
         return queryset
 
 
@@ -80,37 +325,66 @@ class InsurancePolicyViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = InsurancePolicy.objects.all()
-        provider_id = self.request.query_params.get("provider", None)
-        policy_type = self.request.query_params.get("policy_type", None)
-
+        queryset = super().get_queryset()
+        provider_id = self.request.query_params.get("provider_id")
         if provider_id:
-            queryset = queryset.filter(provider_id=provider_id)
-        if policy_type:
-            queryset = queryset.filter(policy_type=policy_type)
-
+            return queryset.filter(provider_id=provider_id)
         return queryset
 
 
-class ProviderVehicleViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for viewing and editing ProviderVehicle instances.
-    """
-
-    queryset = ProviderVehicle.objects.all()
-    serializer_class = ProviderVehicleSerializer
+class ProviderDocumentViewSet(viewsets.ModelViewSet):
+    queryset = ProviderDocument.objects.all()
+    serializer_class = ProviderDocumentSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = ProviderVehicle.objects.all()
-        provider_id = self.request.query_params.get("provider", None)
-        vehicle_type = self.request.query_params.get("vehicle_type", None)
-
+        queryset = super().get_queryset()
+        provider_id = self.request.query_params.get("provider_id")
         if provider_id:
-            queryset = queryset.filter(provider_id=provider_id)
-        if vehicle_type:
-            queryset = queryset.filter(vehicle_type=vehicle_type)
+            return queryset.filter(provider_id=provider_id)
+        return queryset
 
+    @action(detail=True, methods=["post"])
+    def approve(self, request, pk=None):
+        document = self.get_object()
+        document.status = "approved"
+        document.save()
+        return Response({"status": "document approved"})
+
+    @action(detail=True, methods=["post"])
+    def reject(self, request, pk=None):
+        document = self.get_object()
+        document.status = "rejected"
+        document.save()
+        return Response({"status": "document rejected"})
+
+
+class ProviderReviewViewSet(viewsets.ModelViewSet):
+    queryset = ProviderReview.objects.all()
+    serializer_class = ProviderReviewSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        provider_id = self.request.query_params.get("provider_id")
+        if provider_id:
+            return queryset.filter(provider_id=provider_id)
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(customer=self.request.user)
+
+
+class ProviderPaymentViewSet(viewsets.ModelViewSet):
+    queryset = ProviderPayment.objects.all()
+    serializer_class = ProviderPaymentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        provider_id = self.request.query_params.get("provider_id")
+        if provider_id:
+            return queryset.filter(provider_id=provider_id)
         return queryset
 
 
@@ -119,17 +393,19 @@ class SavedJobViewSet(viewsets.ModelViewSet):
     ViewSet for provider's saved jobs
     """
 
+    queryset = SavedJob.objects.all()
     serializer_class = SavedJobSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return SavedJob.objects.filter(provider=self.request.user)
+        return self.queryset.filter(provider=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(provider=self.request.user)
 
     @action(detail=False, methods=["get"])
     def jobs(self, request):
         """Return the actual job objects the provider has saved"""
-        from Job.models import Job
-
         saved_job_ids = SavedJob.objects.filter(provider=request.user).values_list(
             "job_id", flat=True
         )
@@ -148,8 +424,6 @@ class SavedJobViewSet(viewsets.ModelViewSet):
             )
 
         try:
-            from Job.models import Job
-
             job = Job.objects.get(pk=job_id)
 
             saved_job, created = SavedJob.objects.get_or_create(
@@ -174,17 +448,19 @@ class WatchedJobViewSet(viewsets.ModelViewSet):
     ViewSet for provider's watched jobs
     """
 
+    queryset = WatchedJob.objects.all()
     serializer_class = WatchedJobSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return WatchedJob.objects.filter(provider=self.request.user)
+        return self.queryset.filter(provider=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(provider=self.request.user)
 
     @action(detail=False, methods=["get"])
     def jobs(self, request):
         """Return the actual job objects the provider is watching"""
-        from Job.models import Job
-
         watched_job_ids = WatchedJob.objects.filter(provider=request.user).values_list(
             "job_id", flat=True
         )
@@ -203,8 +479,6 @@ class WatchedJobViewSet(viewsets.ModelViewSet):
             )
 
         try:
-            from Job.models import Job
-
             job = Job.objects.get(pk=job_id)
 
             watched_job, created = WatchedJob.objects.get_or_create(

@@ -47,6 +47,7 @@ class JobSerializer(serializers.ModelSerializer):
             "required_qualifications",
             "notes",
             "time_remaining",
+            "price",
             "timeline_events",  # Add this field
         ]
         read_only_fields = ["id", "created_at", "updated_at", "status"]

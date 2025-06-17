@@ -3,13 +3,13 @@ import uuid
 import random
 import string
 from django.db import models
+from django.conf import settings  # Import settings instead
 from apps.Driver.models import Driver
 from apps.Location.models import Location
 from apps.Notification.models import Notification
 from apps.Tracking.models import TrackingUpdate
 from apps.Basemodel.models import Basemodel
 
-from apps.User.models import User
 from django_fsm import FSMField, transition
 
 
@@ -31,6 +31,13 @@ class Request(Basemodel):
         ("cancelled", "Cancelled"),
     ]
 
+    PAYMENT_STATUSES = [
+        ("pending", "Pending"),
+        ("completed", "Completed"),
+        ("failed", "Failed"),
+        ("refunded", "Refunded"),
+    ]
+
     TIME_SLOT_CHOICES = [
         ("morning", "Morning (8AM - 12PM)"),
         ("afternoon", "Afternoon (12PM - 4PM)"),
@@ -45,7 +52,9 @@ class Request(Basemodel):
         ("scheduled", "Scheduled"),
     ]
 
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True
+    )
     driver = models.ForeignKey(Driver, on_delete=models.SET_NULL, null=True, blank=True)
     provider = models.ForeignKey(
         "Provider.ServiceProvider", on_delete=models.SET_NULL, null=True, blank=True
@@ -56,7 +65,7 @@ class Request(Basemodel):
         max_length=20,
         choices=PRIORITY_CHOICES,
         default="standard",
-        help_text="Priority level of the request"
+        help_text="Priority level of the request",
     )
     service_level = models.CharField(
         max_length=20,
@@ -73,9 +82,9 @@ class Request(Basemodel):
     )
 
     # Contact Information
-    contact_name = models.CharField(max_length=100, blank=True)
-    contact_phone = models.CharField(max_length=20, blank=True)
-    contact_email = models.EmailField(blank=True)
+    contact_name = models.CharField(max_length=255, blank=True, default="")
+    contact_email = models.EmailField(blank=True, default="")
+    contact_phone = models.CharField(max_length=20, blank=True, default="")
     booking_code = models.CharField(max_length=20, blank=True)
     # Locations for non-journey requests
     pickup_location = models.ForeignKey(
@@ -124,7 +133,7 @@ class Request(Basemodel):
     dimensions = models.JSONField(null=True, blank=True)  # Store length, width, height
     requires_special_handling = models.BooleanField(default=False)
     special_instructions = models.TextField(blank=True)
-    stuff_required = models.IntegerField(default=0, null=True, blank=True)
+    staff_required = models.IntegerField(default=0, null=True, blank=True)
 
     # Moving items for non-journey requests
     moving_items = models.JSONField(
@@ -136,7 +145,7 @@ class Request(Basemodel):
 
     # Pricing
     base_price = models.DecimalField(
-        max_digits=10, decimal_places=2, null=True, blank=True
+        max_digits=10, decimal_places=2, null=True, blank=True, default=0.0
     )
     final_price = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True
@@ -153,7 +162,9 @@ class Request(Basemodel):
     insurance_value = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True
     )
-    payment_status = models.CharField(max_length=20, default="pending")
+    payment_status = models.CharField(
+        max_length=20, choices=PAYMENT_STATUSES, default="pending"
+    )
     cancellation_reason = models.TextField(blank=True)
     cancellation_time = models.DateTimeField(null=True, blank=True)
     cancellation_fee = models.DecimalField(
@@ -190,7 +201,7 @@ class Request(Basemodel):
             today = datetime.now().date()
             if self.preferred_pickup_date < today:
                 raise ValueError("Pickup date cannot be in the past")
-            
+
             # If it's a same-day request, ensure it's today
             if self.priority == "same_day" and self.preferred_pickup_date != today:
                 raise ValueError("Same-day requests must be for today")
@@ -244,7 +255,7 @@ class Request(Basemodel):
     def calculate_base_price(self):
         """Calculate the base price based on distance, weight, and type"""
         from pricing.services import PricingService
-        
+
         # Get active pricing configuration
         active_config = PricingService.get_active_configuration()
         if not active_config:
@@ -258,9 +269,13 @@ class Request(Basemodel):
             # For journey, calculate based on total distance and items
             if self.estimated_distance:
                 # Get distance factor from configuration
-                distance_factor = active_config.distance_factors.filter(is_active=True).first()
+                distance_factor = active_config.distance_factors.filter(
+                    is_active=True
+                ).first()
                 if distance_factor:
-                    base_price += float(self.estimated_distance) * float(distance_factor.base_rate_per_km)
+                    base_price += float(self.estimated_distance) * float(
+                        distance_factor.base_rate_per_km
+                    )
 
             # Add fees for each stop
             stop_count = self.stops.count()
@@ -274,40 +289,50 @@ class Request(Basemodel):
             # For instant/biddable requests
             # Add distance factor
             if self.estimated_distance:
-                distance_factor = active_config.distance_factors.filter(is_active=True).first()
+                distance_factor = active_config.distance_factors.filter(
+                    is_active=True
+                ).first()
                 if distance_factor:
-                    base_price += float(self.estimated_distance) * float(distance_factor.base_rate_per_km)
+                    base_price += float(self.estimated_distance) * float(
+                        distance_factor.base_rate_per_km
+                    )
 
             # Add weight factor
             if self.total_weight:
-                weight_factor = active_config.weight_factors.filter(is_active=True).first()
+                weight_factor = active_config.weight_factors.filter(
+                    is_active=True
+                ).first()
                 if weight_factor:
-                    base_price += float(self.total_weight) * float(weight_factor.base_rate_per_kg)
+                    base_price += float(self.total_weight) * float(
+                        weight_factor.base_rate_per_kg
+                    )
 
         # Get service level multiplier from configuration
         service_level_factor = active_config.service_level_factors.filter(
-            is_active=True, 
-            service_level=self.service_level
+            is_active=True, service_level=self.service_level
         ).first()
         if service_level_factor:
             base_price *= float(service_level_factor.price_multiplier)
 
         # Get priority multiplier from configuration
         priority_factor = active_config.service_level_factors.filter(
-            is_active=True, 
-            service_level=self.priority
+            is_active=True, service_level=self.priority
         ).first()
         if priority_factor:
             base_price *= float(priority_factor.price_multiplier)
 
         # Add special handling factor
         if self.requires_special_handling:
-            special_req_factor = active_config.special_requirement_factors.filter(is_active=True).first()
+            special_req_factor = active_config.special_requirement_factors.filter(
+                is_active=True
+            ).first()
             if special_req_factor:
                 base_price *= float(special_req_factor.fragile_items_multiplier)
 
         # Add fuel surcharge
-        fuel_surcharge = base_price * (float(active_config.fuel_surcharge_percentage) / 100)
+        fuel_surcharge = base_price * (
+            float(active_config.fuel_surcharge_percentage) / 100
+        )
         base_price += fuel_surcharge
 
         # Add carbon offset
@@ -347,6 +372,15 @@ class Request(Basemodel):
 
         old_status = self.status
         self.status = new_status
+
+        # Update payment status based on request status
+        if new_status == "cancelled":
+            self.payment_status = "failed"
+        elif new_status == "completed":
+            # Only update to completed if there was a successful payment
+            if self.payments.filter(status="succeeded").exists():
+                self.payment_status = "completed"
+
         self.save()
 
         # Create tracking update
@@ -378,23 +412,34 @@ class Request(Basemodel):
         """Return all locations associated with this request"""
         locations = []
         for stop in self.stops.all():
-            location_data = {
-                "id": stop.id,
-                "type": stop.type,
-                "address": stop.address or "Unknown location",
-                "unit_number": stop.unit_number,
-                "floor": stop.floor,
-                "has_elevator": stop.has_elevator,
-                "parking_info": stop.parking_info,
-                "instructions": stop.instructions,
-                "estimated_time": stop.estimated_time,
-                "property_type": stop.property_type,
-                "number_of_rooms": stop.number_of_rooms,
-                "number_of_floors": stop.number_of_floors,
-                "service_type": stop.service_type,
-                "sequence": stop.sequence,
-            }
-            locations.append(location_data)
+            if stop.location:
+                location_data = {
+                    "id": stop.id,
+                    "type": stop.type,
+                    "address": stop.location.address or "Unknown location",
+                    "postcode": stop.location.postcode,
+                    "latitude": stop.location.latitude,
+                    "longitude": stop.location.longitude,
+                    "contact_name": stop.location.contact_name,
+                    "contact_phone": stop.location.contact_phone,
+                    "special_instructions": stop.location.special_instructions,
+                    "unit_number": stop.unit_number,
+                    "floor": stop.floor,
+                    "has_elevator": stop.has_elevator,
+                    "parking_info": stop.parking_info,
+                    "instructions": stop.instructions,
+                    "estimated_time": (
+                        stop.scheduled_time.strftime("%H:%M")
+                        if stop.scheduled_time
+                        else None
+                    ),
+                    "property_type": stop.property_type,
+                    "number_of_rooms": stop.number_of_rooms,
+                    "number_of_floors": stop.number_of_floors,
+                    "service_type": stop.service_type,
+                    "sequence": stop.sequence,
+                }
+                locations.append(location_data)
         return locations
 
     def get_journey_stops(self):
@@ -418,7 +463,7 @@ class Request(Basemodel):
             ),
             "weight": float(self.total_weight) if self.total_weight else 0,
             "service_level": self.service_level,
-            "staff_required": self.stuff_required or 1,
+            "staff_required": self.staff_required or 1,
             "property_type": (
                 self.pickup_location.property_type if self.pickup_location else "other"
             ),
@@ -496,20 +541,258 @@ class Request(Basemodel):
     @transition(field=status, source=["pending", "accepted"], target="cancelled")
     def cancel(self, reason=None):
         """Cancel the request"""
-        self.cancellation_reason = reason or "Cancelled by user"
-        self.cancellation_time = datetime.now(timezone.utc)
-        # Calculate cancellation fee if applicable
+        self.cancellation_reason = reason
+        self.cancellation_time = timezone.now()
+
+        # Update payment status to failed when request is cancelled
+        self.payment_status = "failed"
+        self.save()
+
+        # Cancel any pending payments
+        for payment in self.payments.filter(status__in=["pending", "processing"]):
+            try:
+                payment.cancel_payment(reason=reason)
+            except Exception as e:
+                print(f"Error cancelling payment {payment.id}: {str(e)}")
+
+    @transition(field=status, source=["pending"], target="payment_completed")
+    def complete_payment(self):
+        """Mark the request as payment completed and create a job"""
+        from apps.Job.models import Job
+
+        # Verify payment status
+        latest_payment = self.payments.order_by("-created_at").first()
+        if not latest_payment or latest_payment.status != "succeeded":
+            raise ValueError("Cannot complete payment: No successful payment found")
+
+        # Update payment status
+        self.payment_status = "completed"
+        self.save()
+
+        # Create the job
+        try:
+            Job.create_job_after_payment(self)
+        except Exception as e:
+            # Log the error but don't prevent the transition
+            print(f"Error creating job after payment completion: {str(e)}")
+
+        # Create tracking update
+        TrackingUpdate.objects.create(
+            request=self,
+            update_type="payment",
+            status_message="Payment completed successfully",
+        )
 
     def generate_booking_code(self):
-        """Generate a unique booking code for the request."""
+        """Generate a unique booking code"""
         random_part = "".join(
             random.choices(string.ascii_uppercase + string.digits, k=8)
         )
         code = f"MV-{random_part}"
         return code
 
+    @staticmethod
+    def reconcile_statuses(
+        date_from=None, date_to=None, status_filter=None, stripe_service=None
+    ):
+        """
+        Reconcile request statuses by checking payments and jobs.
+        This function checks for inconsistencies and fixes them:
+        1. Requests with completed payments but wrong status
+        2. Requests with jobs but wrong status
+        3. Requests stuck in processing state
+        4. Requests with mismatched payment status
+
+        Args:
+            date_from: Optional start date for filtering requests
+            date_to: Optional end date for filtering requests
+            status_filter: Optional status to filter requests
+            stripe_service: Optional StripeService instance for payment polling
+
+        Returns:
+            dict: Summary of reconciliation actions taken
+        """
+        from apps.Payment.models import Payment
+        from apps.Job.models import Job
+        from django.utils import timezone
+        from django.db.models import Q
+
+        summary = {
+            "total_checked": 0,
+            "status_updated": 0,
+            "payment_fixed": 0,
+            "jobs_created": 0,
+            "payments_polled": 0,
+            "errors": [],
+            "details": [],
+        }
+
+        # Build filter query
+        filter_query = Q(status__in=["pending", "draft", "payment_completed"]) | Q(
+            payment_status="pending"
+        )
+
+        if date_from:
+            filter_query &= Q(created_at__gte=date_from)
+        if date_to:
+            filter_query &= Q(created_at__lte=date_to)
+        if status_filter:
+            filter_query &= Q(status=status_filter)
+
+        # Get all requests that might need reconciliation
+        requests = Request.objects.filter(filter_query)
+
+        summary["total_checked"] = requests.count()
+
+        for request in requests:
+            try:
+                # Get the latest payment for this request
+                latest_payment = (
+                    Payment.objects.filter(request=request)
+                    .order_by("-created_at")
+                    .first()
+                )
+
+                # Get associated job
+                job = Job.objects.filter(request=request).first()
+
+                action_taken = []
+
+                # Poll payment status if stripe_service is provided
+                if (
+                    stripe_service
+                    and latest_payment
+                    and latest_payment.status in ["pending", "processing"]
+                ):
+                    try:
+                        poll_result = stripe_service.poll_payment_status(
+                            latest_payment.id
+                        )
+                        if poll_result["success"]:
+                            summary["payments_polled"] += 1
+                            if poll_result.get("changes_made"):
+                                action_taken.append(
+                                    f"Polled payment status: {poll_result['original_status']} -> {poll_result['current_status']}"
+                                )
+                                # Refresh payment after polling
+                                latest_payment.refresh_from_db()
+                    except Exception as e:
+                        error_msg = (
+                            f"Failed to poll payment {latest_payment.id}: {str(e)}"
+                        )
+                        summary["errors"].append(error_msg)
+                        action_taken.append(error_msg)
+
+                # Case 1: Payment completed but request not marked
+                if latest_payment and latest_payment.status == "succeeded":
+                    if request.status != "payment_completed":
+                        old_status = request.status
+                        request.status = "payment_completed"
+                        request.payment_status = "completed"
+                        request.save()
+                        action_taken.append(
+                            f"Updated status from {old_status} to payment_completed"
+                        )
+                        summary["status_updated"] += 1
+
+                # Case 2: Payment completed but no job created
+                if request.status == "payment_completed" and not job:
+                    try:
+                        Job.create_job_after_payment(request)
+                        action_taken.append("Created missing job")
+                        summary["jobs_created"] += 1
+                    except Exception as e:
+                        error_msg = (
+                            f"Failed to create job for request {request.id}: {str(e)}"
+                        )
+                        summary["errors"].append(error_msg)
+                        action_taken.append(error_msg)
+
+                # Case 3: Request stuck in processing
+                processing_timeout = timezone.now() - timezone.timedelta(hours=1)
+                if (
+                    latest_payment
+                    and latest_payment.status == "processing"
+                    and latest_payment.created_at < processing_timeout
+                ):
+                    if stripe_service:
+                        try:
+                            # Try to poll payment status again with longer timeout
+                            poll_result = stripe_service.poll_payment_until_complete(
+                                latest_payment.id, max_attempts=5, base_delay=2.0
+                            )
+                            if poll_result["success"]:
+                                summary["payments_polled"] += 1
+                                action_taken.append(
+                                    f"Resolved stuck payment: {poll_result['original_status']} -> {poll_result['final_status']}"
+                                )
+                                # Refresh payment after polling
+                                latest_payment.refresh_from_db()
+                        except Exception as e:
+                            error_msg = f"Failed to resolve stuck payment {latest_payment.id}: {str(e)}"
+                            summary["errors"].append(error_msg)
+                            action_taken.append(error_msg)
+                    else:
+                        action_taken.append(
+                            "Found stuck processing payment (no polling service available)"
+                        )
+                        summary["payment_fixed"] += 1
+
+                # Case 4: Mismatched payment status
+                if latest_payment:
+                    # Map Stripe payment status to our defined PAYMENT_STATUSES
+                    expected_payment_status = {
+                        "succeeded": "completed",  # Payment model -> Request model status
+                        "processing": "pending",
+                        "requires_payment_method": "pending",
+                        "requires_confirmation": "pending",
+                        "requires_action": "pending",
+                        "failed": "failed",
+                        "cancelled": "failed",  # Treat cancelled as failed
+                        "refunded": "refunded",
+                        "partially_refunded": "refunded",  # Map partial refunds to refunded since we don't have that status
+                    }.get(latest_payment.status, "pending")
+
+                    # Validate that the status is in our choices
+                    if (
+                        expected_payment_status
+                        not in dict(Request.PAYMENT_STATUSES).keys()
+                    ):
+                        error_msg = (
+                            f"Invalid payment status mapping: {expected_payment_status}"
+                        )
+                        summary["errors"].append(error_msg)
+                        action_taken.append(error_msg)
+                        expected_payment_status = (
+                            "pending"  # Default to pending if invalid
+                        )
+
+                    if request.payment_status != expected_payment_status:
+                        old_status = request.payment_status
+                        request.payment_status = expected_payment_status
+                        request.save()
+                        action_taken.append(
+                            f"Fixed payment status from {old_status} to {expected_payment_status}"
+                        )
+                        summary["payment_fixed"] += 1
+
+                if action_taken:
+                    summary["details"].append(
+                        {
+                            "request_id": request.id,
+                            "tracking_number": request.tracking_number,
+                            "actions": action_taken,
+                        }
+                    )
+
+            except Exception as e:
+                error_msg = f"Error processing request {request.id}: {str(e)}"
+                summary["errors"].append(error_msg)
+
+        return summary
+
     def __str__(self):
-        return f"{self.tracking_number or 'New'} - {self.user.username} - {self.request_type}"
+        return f"{self.tracking_number or 'New'} - {self.request_type}"
 
     class Meta:
         db_table = "request"
@@ -615,9 +898,11 @@ class PickupSchedule(models.Model):
     request = models.ForeignKey("Request", on_delete=models.CASCADE)
     location = models.ForeignKey("Location.Location", on_delete=models.CASCADE)
     # Add other fields needed for pickup scheduling
+    objects: models.Manager = models.Manager()
 
 
 class DropoffSchedule(models.Model):
     request = models.ForeignKey("Request", on_delete=models.CASCADE)
     location = models.ForeignKey("Location.Location", on_delete=models.CASCADE)
     # Add other fields needed for dropoff scheduling
+    objects: models.Manager = models.Manager()

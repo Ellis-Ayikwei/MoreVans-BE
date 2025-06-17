@@ -12,17 +12,24 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 
 from pathlib import Path
 import os
+from dotenv import load_dotenv
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(BASE_DIR / ".env")
+
+# Debug environment loading
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-%u9eljyfg@m8zp&5)u6yv#_m6xbp0_m1!6+h#emx%bbmeo)1@="
+SECRET_KEY = os.getenv("DJANGO_SECRETE_KEY")
 OPENWEATHERMAP_API_KEY = os.environ.get("OPENWEATHERMAP_API_KEY", "")
+GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -334,3 +341,55 @@ EMAIL_USE_TLS = True
 
 
 APPEND_SLASH = False
+
+# --- Stripe Configuration ---
+# Stripe API Keys (get these from Stripe Dashboard)
+STRIPE_PUBLISHABLE_KEY = os.getenv(
+    "STRIPE_PUBLISHABLE_KEY",
+)  # Test publishable key for development
+STRIPE_SECRET_KEY = os.getenv(
+    "STRIPE_SECRET_KEY",
+)  # Test secret key for development
+
+# Stripe Webhook Configuration
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+
+print("Stripe WEBHOOK Key:", STRIPE_WEBHOOK_SECRET)
+# Stripe Configuration
+STRIPE_LIVE_MODE = False  # Set to True for production
+STRIPE_CURRENCY = "gbp"  # Default currency
+STRIPE_SUPPORTED_CURRENCIES = ["usd", "eur", "gbp", "ghs"]  # Supported currencies
+
+# Payment Configuration
+PAYMENT_SUCCESS_URL = os.getenv(
+    "PAYMENT_SUCCESS_URL", "http://localhost:3000/payment/success"
+)
+PAYMENT_CANCEL_URL = os.getenv(
+    "PAYMENT_CANCEL_URL", "http://localhost:3000/payment/cancel"
+)
+
+# Stripe Features Configuration
+STRIPE_FEATURES = {
+    "payment_intents": True,
+    "payment_methods": True,
+    "customers": True,
+    "refunds": True,
+    "webhooks": True,
+    "subscriptions": False,  # Enable when subscription features are needed
+}
+
+# Logging configuration for Stripe
+LOGGING["loggers"]["stripe"] = {
+    "handlers": ["console"],
+    "level": "INFO",
+    "propagate": False,
+}
+
+LOGGING["loggers"]["apps.Payment"] = {
+    "handlers": ["console"],
+    "level": "INFO",
+    "propagate": False,
+}
+
+MEDIA_URL = "/uploads/"
+MEDIA_ROOT = os.path.join(BASE_DIR, "uploads")

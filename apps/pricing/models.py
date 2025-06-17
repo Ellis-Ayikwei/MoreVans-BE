@@ -20,6 +20,7 @@ class PricingFactor(models.Model):  # Defining abstract base class for pricing f
     )  # Whether the pricing factor is active
     created_at = models.DateTimeField(auto_now_add=True)  # Timestamp of creation
     updated_at = models.DateTimeField(auto_now=True)  # Timestamp of last update
+    objects: models.Manager = models.Manager()
 
     class Meta:  # Meta class for additional options
         abstract = True  # Marks this model as abstract
@@ -397,6 +398,7 @@ class ConfigFactorBase(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    objects: models.Manager = models.Manager()
 
     class Meta:
         abstract = True
@@ -640,6 +642,7 @@ class PricingConfiguration(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    objects: models.Manager = models.Manager()
 
     class Meta:
         ordering = ["-created_at"]

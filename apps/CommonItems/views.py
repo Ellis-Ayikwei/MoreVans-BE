@@ -13,7 +13,7 @@ class ItemCategoryViewSet(viewsets.ModelViewSet):
 
     queryset = ItemCategory.objects.all()
     serializer_class = ItemCategorySerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get_queryset(self):
         queryset = ItemCategory.objects.all()

@@ -17,14 +17,14 @@ class Driver(Basemodel):
     """
 
     # Core driver details linked to user account
-    user = models.OneToOneField(
-        User,
-        on_delete=models.CASCADE,
-        related_name="driver_profile",
-        null=True,
-        blank=True,
-        help_text=_("User account associated with this driver"),
-    )
+    # user = models.OneToOneField(
+    #     User,
+    #     on_delete=models.CASCADE,
+    #     related_name="driver_profile",
+    #     null=True,
+    #     blank=True,
+    #     help_text=_("User account associated with this driver"),
+    # )
 
     # Driver basic information
     name = models.CharField(max_length=255)
@@ -35,12 +35,12 @@ class Driver(Basemodel):
         max_length=9,
         null=True,
         blank=True,
-        validators=[
-            RegexValidator(
-                r"^[A-CEGHJ-PR-TW-Z]{1}[A-CEGHJ-NPR-TW-Z]{1}[0-9]{6}[A-D]{1}$",
-                "Valid NI number required",
-            )
-        ],
+        # validators=[
+        #     RegexValidator(
+        #         r"^[A-CEGHJ-PR-TW-Z]{1}[A-CEGHJ-NPR-TW-Z]{1}[0-9]{6}[A-D]{1}$",
+        #         "Valid NI number required",
+        #     )
+        # ],
         help_text=_("National Insurance Number (e.g., AB123456C)"),
     )
     address = models.TextField(blank=True)
@@ -254,6 +254,14 @@ class DriverAvailability(Basemodel):
 class DriverDocument(Basemodel):
     """Model for storing driver-related documents such as license, CPC, and training certificates"""
 
+    objects: models.Manager = models.Manager()
+
+    DOCUMENT_STATUS = [
+        ("rejected", "Rejected"),
+        ("verified", "Verified"),
+        ("pending", "pending"),
+    ]
+
     DOCUMENT_TYPES = [
         ("license", "Driving License"),
         ("cpc", "CPC Qualification Card"),
@@ -271,11 +279,36 @@ class DriverDocument(Basemodel):
         Driver, on_delete=models.CASCADE, related_name="documents"
     )
     document_type = models.CharField(max_length=20, choices=DOCUMENT_TYPES)
-    document_file = models.FileField(upload_to="driver_documents/%Y/%m/")
-    issue_date = models.DateField()
+    issue_date = models.DateField(null=True, blank=True)
     expiry_date = models.DateField(null=True, blank=True)
     reference_number = models.CharField(max_length=100, blank=True)
     notes = models.TextField(blank=True)
+    is_verified = models.BooleanField(default=False)
+    has_two_sides = models.BooleanField(default=False)
+    rejection_reason = models.TextField(blank=True, null=True)
+    verification_note = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=50, choices=DOCUMENT_STATUS, default="pending")
+
+    def __str__(self):
+        return f"{self.get_document_type_display()} - {self.driver.name}"
+
+    def get_upload_path(instance, filename):
+        # Get the file extension
+        ext = filename.split(".")[-1]
+        # Create a shorter filename using timestamp
+        from django.utils import timezone
+
+        timestamp = timezone.now().strftime("%Y%m%d_%H%M%S")
+        # Create new filename with timestamp and extension
+        new_filename = f"{timestamp}.{ext}"
+        return f"docs/drivers/{instance.driver.id}/{instance.id}/{new_filename}"
+
+    document_front = models.FileField(
+        upload_to=get_upload_path, blank=True, null=True, max_length=255
+    )
+    document_back = models.FileField(
+        upload_to=get_upload_path, blank=True, null=True, max_length=255
+    )
 
     class Meta:
         db_table = "driver_document"
@@ -283,9 +316,6 @@ class DriverDocument(Basemodel):
         verbose_name = _("Driver Document")
         verbose_name_plural = _("Driver Documents")
         ordering = ["-issue_date"]
-
-    def __str__(self):
-        return f"{self.get_document_type_display()} - {self.driver.name}"
 
 
 class DriverInfringement(Basemodel):

@@ -75,18 +75,25 @@ def calculate_request_totals(request) -> Dict[str, Any]:
             total_weight += Decimal(str(item.weight))
             
         # Add dimensions
-        if item.length and item.width and item.height:
-            total_dimensions['length'] = max(total_dimensions['length'], Decimal(str(item.length)))
-            total_dimensions['width'] = max(total_dimensions['width'], Decimal(str(item.width)))
-            total_dimensions['height'] += Decimal(str(item.height))
-            
-            # Calculate volume for this item
-            item_volume = (
-                Decimal(str(item.length)) * 
-                Decimal(str(item.width)) * 
-                Decimal(str(item.height))
-            )
-            total_dimensions['volume'] += item_volume
+        if item.dimensions:
+            try:
+                # Parse dimensions string (format: "L × W × H cm")
+                dims = item.dimensions.split('×')
+                if len(dims) == 3:
+                    length = Decimal(dims[0].strip().replace('cm', '').strip())
+                    width = Decimal(dims[1].strip().replace('cm', '').strip())
+                    height = Decimal(dims[2].strip().replace('cm', '').strip())
+                    
+                    total_dimensions['length'] = max(total_dimensions['length'], length)
+                    total_dimensions['width'] = max(total_dimensions['width'], width)
+                    total_dimensions['height'] += height
+                    
+                    # Calculate volume for this item
+                    item_volume = length * width * height
+                    total_dimensions['volume'] += item_volume
+            except (ValueError, TypeError, AttributeError):
+                # Skip invalid dimension formats
+                continue
     
     return {
         'total_weight': float(total_weight),
