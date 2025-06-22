@@ -523,6 +523,22 @@ class RequestViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     @action(detail=True, methods=["post"])
+    def adjust_price(self, request, pk=None):
+        """Adjust the price of a request."""
+        req = self.get_object()
+        new_price = request.data.get("price", None)
+        if new_price is None:
+            return Response(
+                {"detail": "Price is required."}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        req.final_price = new_price
+        req.save()
+
+        serializer = self.get_serializer(req)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["post"])
     def update_status(self, request, pk=None):
         """Update the status of a request."""
         req = self.get_object()
@@ -535,7 +551,7 @@ class RequestViewSet(viewsets.ModelViewSet):
 
         req.update_status(new_status)
         serializer = self.get_serializer(req)
-        return Response(serializer.data)
+        return Response("Request status updated successfully")
 
     @action(detail=True, methods=["post"])
     def assign_driver(self, request, pk=None):
