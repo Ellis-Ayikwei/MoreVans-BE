@@ -9,7 +9,7 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
     TokenVerifyView,
 )
-from apps.Job.views import JobViewSet, JobBidViewSet
+from apps.Job.views import JobViewSet
 from django.conf import settings
 from django.conf.urls.static import static
 
@@ -49,7 +49,6 @@ router.register(r"maintenance-records", MaintenanceRecordViewSet)
 
 
 router.register(r"jobs", JobViewSet)
-router.register(r"bids", JobBidViewSet)
 
 urlpatterns = [
     # Geocoding endpoints outside API path to bypass authentication issues
@@ -121,6 +120,8 @@ urlpatterns = [
                 # provider app URLs
                 path("", include("apps.Provider.urls")),
                 path("", include("apps.Driver.urls")),
+                path("", include("apps.Bidding.urls")),
+                path("", include("apps.Message.urls")),  # Add this line
                 # Media files under API prefix
                 *static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT),
             ]

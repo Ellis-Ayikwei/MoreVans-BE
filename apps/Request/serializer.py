@@ -1,5 +1,7 @@
 from apps.Driver.models import Driver
 from rest_framework import serializers
+
+from apps.Message.serializer import MessageSerializer
 from .models import (
     Request,
     MoveMilestone,
@@ -68,6 +70,8 @@ class MoveMilestoneSerializer(serializers.ModelSerializer):
 
 
 class RequestSerializer(serializers.ModelSerializer):
+    from apps.User.serializer import UserSerializer
+
     items = RequestItemSerializer(many=True, required=False)
     driver = DriverSerializer(read_only=True)
     driver_id = serializers.PrimaryKeyRelatedField(
@@ -87,6 +91,8 @@ class RequestSerializer(serializers.ModelSerializer):
     all_locations = serializers.SerializerMethodField()
     milestones = MoveMilestoneSerializer(many=True, required=False)
     user_id = serializers.UUIDField(write_only=True, required=False)
+    user = serializers.SerializerMethodField()
+    messages = MessageSerializer(many=True, read_only=True)
 
     class Meta:
         model = Request
@@ -112,6 +118,7 @@ class RequestSerializer(serializers.ModelSerializer):
             "items_description",
             "total_weight",
             "dimensions",
+            "messages",
             "requires_special_handling",
             "special_instructions",
             "moving_items",
@@ -140,7 +147,21 @@ class RequestSerializer(serializers.ModelSerializer):
             "milestones",
             "user_id",
         ]
+        read_only_fields = ["user", "messages"]  # Make sure user is read-only
         extra_kwargs = {"user": {"read_only": True, "required": False}}
+
+    def get_user(self, obj):
+        """Return user data if available"""
+        if obj.user:
+            return {
+                "id": str(obj.user.id),
+                "email": obj.user.email,
+                "first_name": obj.user.first_name,
+                "last_name": obj.user.last_name,
+                "user_type": getattr(obj.user, "user_type", "customer"),
+                "phone_number": getattr(obj.user, "phone_number", ""),
+            }
+        return None
 
     def get_all_locations(self, obj):
         """Return all locations associated with this request"""
@@ -333,22 +354,6 @@ class RequestSerializer(serializers.ModelSerializer):
         if isinstance(number_of_floors, str):
             try:
                 number_of_floors = int(number_of_floors)
-            except ValueError:
-                number_of_floors = 1
-
-        # Clean estimated_time
-        estimated_time = None
-        if "estimated_time" in stop_data:
-            try:
-                time_str = stop_data["estimated_time"]
-                if isinstance(time_str, str):
-                    # Parse time string (HH:MM format)
-                    hours, minutes = map(int, time_str.split(":"))
-                    estimated_time = (
-                        timezone.now()
-                        .replace(hour=hours, minute=minutes, second=0, microsecond=0)
-                        .time()
-                    )
             except (ValueError, TypeError):
                 pass
 

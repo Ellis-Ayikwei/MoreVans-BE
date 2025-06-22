@@ -5,6 +5,8 @@ from apps.User.models import User
 
 
 class PaymentMethod(Basemodel):
+    """Model to store user payment methods for Stripe integration"""
+
     PAYMENT_TYPES = [
         ("card", "Credit/Debit Card"),
         ("bank", "Bank Transfer"),
@@ -106,33 +108,35 @@ class Payment(Basemodel):
     def mark_as_processing(self, payment_intent_id=None):
         """
         Mark payment as processing with optional Stripe payment intent ID.
-        
+
         Args:
             payment_intent_id: Optional Stripe payment intent ID
         """
         if self.status not in ["pending"]:
             raise ValueError("Only pending payments can be marked as processing")
-        
+
         self.status = "processing"
         if payment_intent_id:
             self.stripe_payment_intent_id = payment_intent_id
         self.save()
-        
+
         self._create_payment_event("processing_started", "Payment processing started")
 
     def mark_as_succeeded(self, charge_id=None, transaction_details=None):
         """
         Mark payment as succeeded.
-        
+
         Args:
             charge_id: Optional Stripe charge ID
             transaction_details: Optional dictionary with additional transaction details
         """
         if self.status not in ["processing", "pending"]:
-            raise ValueError("Only processing or pending payments can be marked as succeeded")
-        
+            raise ValueError(
+                "Only processing or pending payments can be marked as succeeded"
+            )
+
         from django.utils import timezone
-        
+
         self.status = "succeeded"
         self.completed_at = timezone.now()
         if charge_id:
@@ -140,9 +144,11 @@ class Payment(Basemodel):
         if transaction_details:
             self.metadata.update(transaction_details)
         self.save()
-        
-        self._create_payment_event("payment_succeeded", "Payment completed successfully")
-        
+
+        self._create_payment_event(
+            "payment_succeeded", "Payment completed successfully"
+        )
+
         # Trigger request payment completion
         if self.payment_type in ["full_payment", "final_payment"]:
             try:
@@ -155,16 +161,16 @@ class Payment(Basemodel):
     def mark_as_failed(self, failure_reason=None, transaction_details=None):
         """
         Mark payment as failed.
-        
+
         Args:
             failure_reason: Reason for payment failure
             transaction_details: Optional dictionary with additional transaction details
         """
         if self.status in ["succeeded", "refunded", "partially_refunded"]:
             raise ValueError("Cannot mark payment as failed in current state")
-        
+
         from django.utils import timezone
-        
+
         self.status = "failed"
         self.failed_at = timezone.now()
         if failure_reason:
@@ -172,30 +178,32 @@ class Payment(Basemodel):
         if transaction_details:
             self.metadata.update(transaction_details)
         self.save()
-        
-        self._create_payment_event("payment_failed", f"Payment failed: {failure_reason}")
+
+        self._create_payment_event(
+            "payment_failed", f"Payment failed: {failure_reason}"
+        )
 
     def cancel_payment(self, reason=None):
         """
         Cancel a payment.
-        
+
         Args:
             reason: Optional reason for cancellation
         """
         if self.status not in ["pending", "processing"]:
             raise ValueError("Only pending or processing payments can be cancelled")
-        
+
         self.status = "cancelled"
         if reason:
             self.metadata["cancellation_reason"] = reason
         self.save()
-        
+
         self._create_payment_event("payment_cancelled", f"Payment cancelled: {reason}")
 
     def process_refund(self, amount=None, reason=None, refund_id=None):
         """
         Process a refund for the payment.
-        
+
         Args:
             amount: Amount to refund (if None, full refund)
             reason: Reason for refund
@@ -203,37 +211,37 @@ class Payment(Basemodel):
         """
         if self.status != "succeeded":
             raise ValueError("Only succeeded payments can be refunded")
-        
+
         from django.utils import timezone
-        
+
         # If amount is None or equals total amount, it's a full refund
         is_full_refund = amount is None or amount == self.amount
-        
+
         self.status = "refunded" if is_full_refund else "partially_refunded"
         self.refunded_at = timezone.now()
         if refund_id:
             self.stripe_refund_id = refund_id
         if reason:
             self.refund_reason = reason
-        
+
         # Store refund details in metadata
         refund_details = {
             "refund_amount": str(amount) if amount else str(self.amount),
             "refund_date": timezone.now().isoformat(),
-            "refund_reason": reason
+            "refund_reason": reason,
         }
         self.metadata["refund_details"] = refund_details
         self.save()
-        
+
         self._create_payment_event(
             "payment_refunded",
-            f"{'Full' if is_full_refund else 'Partial'} refund processed: {reason}"
+            f"{'Full' if is_full_refund else 'Partial'} refund processed: {reason}",
         )
 
     def _create_payment_event(self, event_type, description):
         """
         Create a payment event for tracking.
-        
+
         Args:
             event_type: Type of payment event
             description: Description of the event
@@ -246,25 +254,25 @@ class Payment(Basemodel):
                 "payment_status": self.status,
                 "payment_type": self.payment_type,
                 "amount": str(self.amount),
-                "currency": self.currency
-            }
+                "currency": self.currency,
+            },
         )
 
     @property
     def can_be_processed(self):
         """Check if payment can be processed"""
         return self.status == "pending"
-    
+
     @property
     def can_be_cancelled(self):
         """Check if payment can be cancelled"""
         return self.status in ["pending", "processing"]
-    
+
     @property
     def can_be_refunded(self):
         """Check if payment can be refunded"""
         return self.status == "succeeded"
-    
+
     @property
     def is_complete(self):
         """Check if payment is complete"""
@@ -273,17 +281,19 @@ class Payment(Basemodel):
 
 class PaymentEvent(Basemodel):
     """Model to track payment events and status changes"""
-    
-    payment = models.ForeignKey(Payment, on_delete=models.CASCADE, related_name='events')
+
+    payment = models.ForeignKey(
+        Payment, on_delete=models.CASCADE, related_name="events"
+    )
     event_type = models.CharField(max_length=50)
     description = models.TextField()
     metadata = models.JSONField(default=dict)
-    
+
     class Meta:
         db_table = "payment_event"
         managed = True
         ordering = ["-created_at"]
-    
+
     def __str__(self):
         return f"Payment Event {self.event_type} for Payment {self.payment.id}"
 

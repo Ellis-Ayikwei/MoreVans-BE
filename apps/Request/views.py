@@ -203,6 +203,47 @@ class RequestViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(detail=True, methods=["post"])
+    def confirm_as_job(self, request, pk=None):
+        try:
+            print("Confirming request as a job...", request.data)
+            data = request.data
+            instance = self.get_object()
+
+            # Check if request can be confirmed as job
+            if instance.status == "cancelled":
+                return Response(
+                    {"error": "Cannot confirm cancelled request as job"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            elif instance.status == "confirmed":
+                return Response(
+                    {"errror": "Cannot confirm an already confirmed job"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Use the Job model's create_job method
+            from apps.Job.models import Job
+
+            job = Job.create_job(instance)
+
+            # Update request status to indicate job has been created
+            instance.status = "confirmed"
+            instance.save()
+
+            return Response(
+                {
+                    "message": "Request confirmed as a job successfully",
+                    "job_id": job.id,
+                    "request_id": instance.id,
+                    "job_title": job.title,
+                    "is_instant": job.is_instant,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
     def _create_journey_stops(self, instance, journey_stops, request):
         """Helper method to create journey stops - now uses serializer's logic"""
         print(

@@ -583,6 +583,33 @@ class Request(Basemodel):
             status_message="Payment completed successfully",
         )
 
+    def confirm_as_job(self, **kwargs):
+        """Confirm the request as a job"""
+        from apps.Job.models import Job
+
+        # Check if the request is eligible to be converted to a job
+        if self.status not in ["accepted", "in_transit"]:
+            raise ValueError("Request must be accepted or in transit to confirm as job")
+
+        # Create a new job instance
+        job = Job.objects.create(
+            request=self,
+            user=self.user,
+            status="pending",
+            base_price=self.base_price,
+            final_price=self.final_price,
+            service_level=self.service_level,
+            priority=self.priority,
+            tracking_number=self.tracking_number,
+            **kwargs,
+        )
+
+        # Update request status
+        self.status = "assigned"
+        self.save()
+
+        return job
+
     def generate_booking_code(self):
         """Generate a unique booking code"""
         random_part = "".join(

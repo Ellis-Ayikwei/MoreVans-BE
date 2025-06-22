@@ -9,9 +9,12 @@ from django.contrib.gis.db import models as gis_models
 from django.utils import timezone
 from datetime import datetime
 import uuid
+from django.contrib.gis.geos import Point
 
 
 class ServiceProvider(Basemodel):
+    objects: models.Manager = models.Manager()
+
     # --- Core Identity ---
     user = models.OneToOneField(
         "User.User",
@@ -139,14 +142,20 @@ class ServiceProvider(Basemodel):
     @property
     def service_coverage(self):
         """Returns combined coverage area"""
-        if self.service_areas.exists():
-            return self.service_areas.aggregate(models.Union("area"))["area__union"]
+        if hasattr(self, "service_areas") and self.service_areas.exists():
+            # Use Django's Union aggregation for geometries
+            from django.contrib.gis.db.models import Union
+
+            return self.service_areas.aggregate(Union("area"))["area__union"]
         if self.base_location:
+            # Create a buffer around the base location
             return self.base_location.buffer(self.service_radius_km * 1000)
         return None
 
     def clean(self):
-        if not self.base_location and not self.service_areas.exists():
+        if not self.base_location and not (
+            hasattr(self, "service_areas") and self.service_areas.exists()
+        ):
             raise ValidationError("Must have either base location or service areas")
 
 
@@ -176,7 +185,7 @@ class ServiceArea(Basemodel):
         ]
 
     def __str__(self):
-        return f"{self.name} ({self.provider.company_name})"
+        return f"{self.name} ({self.provider.company_name if self.provider else 'No Provider'})"
 
 
 class InsurancePolicy(Basemodel):
@@ -327,7 +336,7 @@ class ProviderDocument(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.provider.get_full_name()} - {self.get_document_type_display()}"
+        return f"{self.provider.user.email} - {self.get_document_type_display()}"
 
     class Meta:
         verbose_name = _("Provider Document")
@@ -420,7 +429,7 @@ class SavedJob(Basemodel):
         verbose_name_plural = "Saved Jobs"
 
     def __str__(self):
-        return f"{self.provider} saved job #{self.job.id}"
+        return f"{self.provider.email} saved job #{self.job.id}"
 
 
 class WatchedJob(Basemodel):
@@ -444,7 +453,7 @@ class WatchedJob(Basemodel):
         verbose_name_plural = "Watched Jobs"
 
     def __str__(self):
-        return f"{self.provider} watching job #{self.job.id}"
+        return f"{self.provider.email} watching job #{self.job.id}"
 
 
 # def VATNumberValidator(value):

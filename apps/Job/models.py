@@ -3,6 +3,12 @@ from apps.Basemodel.models import Basemodel
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from datetime import timedelta
+import random
+import string
+from datetime import datetime
+from rest_framework import serializers
+from .services import JobTimelineService
+from apps.Request.serializer import RequestSerializer
 
 
 class Job(Basemodel):
@@ -23,6 +29,13 @@ class Job(Basemodel):
     )
     title = models.CharField(max_length=255, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
+    job_number = models.CharField(
+        max_length=20,
+        unique=True,
+        blank=True,
+        null=True,
+        help_text="Unique job identifier with prefix",
+    )
     price = models.DecimalField(
         max_digits=10, decimal_places=2, default=0.0, null=True, blank=True
     )
@@ -52,14 +65,98 @@ class Job(Basemodel):
         db_table = "job"
         managed = True
 
+    def save(self, *args, **kwargs):
+        # Generate job number if not already set
+        if not self.job_number:
+            self.job_number = self.generate_job_number()
+        super().save(*args, **kwargs)
+
+    def generate_job_number(self):
+        """
+        Generates a unique job number.
+        Format: JOB-{YYYYMM}-{SEQUENTIAL_NUMBER}
+        Example: JOB-202406-001, JOB-202406-002
+        """
+        if self.job_number and self.job_number.strip():
+            return self.job_number
+
+        # Get current date for the prefix
+        now = datetime.now()
+        date_prefix = now.strftime("%Y%m")
+
+        # Get the count of jobs created this month to generate sequential number
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        jobs_this_month = Job.objects.filter(
+            created_at__gte=month_start, job_number__startswith=f"JOB-{date_prefix}-"
+        ).count()
+
+        # Generate sequential number (padded to 3 digits)
+        sequential_number = str(jobs_this_month + 1).zfill(3)
+
+        # Create the job number
+        job_number = f"JOB-{date_prefix}-{sequential_number}"
+
+        # Ensure uniqueness (in case of race conditions)
+        counter = 1
+        original_job_number = job_number
+        while Job.objects.filter(job_number=job_number).exclude(id=self.id).exists():
+            counter += 1
+            sequential_number = str(jobs_this_month + counter).zfill(3)
+            job_number = f"JOB-{date_prefix}-{sequential_number}"
+
+            # Prevent infinite loop
+            if counter > 1000:
+                # Fallback to random string
+                random_suffix = "".join(random.choices(string.digits, k=4))
+                job_number = f"JOB-{date_prefix}-{random_suffix}"
+                break
+
+        return job_number
+
+    @classmethod
+    def generate_alternative_job_number(cls):
+        """
+        Alternative job number format if you prefer shorter numbers.
+        Format: MV-{RANDOM_6_CHARS}
+        Example: MV-A1B2C3, MV-X9Y8Z7
+        """
+        while True:
+            # Generate 6 random alphanumeric characters
+            random_chars = "".join(
+                random.choices(string.ascii_uppercase + string.digits, k=6)
+            )
+            job_number = f"MV-{random_chars}"
+
+            # Check if it's unique
+            if not cls.objects.filter(job_number=job_number).exists():
+                return job_number
+
+    @classmethod
+    def get_next_job_number_preview(cls):
+        """
+        Preview what the next job number would be without creating a job.
+        Useful for displaying to users before job creation.
+        """
+        now = datetime.now()
+        date_prefix = now.strftime("%Y%m")
+
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        jobs_this_month = cls.objects.filter(
+            created_at__gte=month_start, job_number__startswith=f"JOB-{date_prefix}-"
+        ).count()
+
+        sequential_number = str(jobs_this_month + 1).zfill(3)
+        return f"JOB-{date_prefix}-{sequential_number}"
+
     @staticmethod
-    def create_job_after_payment(request_obj):
+    def create_job(request_obj, **kwargs):
         """
         Creates a job after payment has been completed for a request.
         If a job already exists for this request, returns the existing job.
 
         Args:
             request_obj: The Request instance that has been paid for
+            kwargs: Additional arguments for job creation
 
         Returns:
             Job: The created or existing job instance
@@ -70,40 +167,82 @@ class Job(Basemodel):
         from apps.JourneyStop.models import JourneyStop
         import random
 
-        # Verify request is in a valid state
-        if request_obj.payment_status != "completed":
-            raise ValueError("Request must have completed payment to create a job")
-
         # Check if a job already exists for this request
         existing_job = Job.objects.filter(request=request_obj).first()
         if existing_job:
             return existing_job
 
-        # Get location information from journey stops
-        pickup_stop = request_obj.stops.filter(type="pickup").first()
-        dropoff_stop = request_obj.stops.filter(type="dropoff").first()
+        # Get all stops ordered by sequence
+        all_stops = request_obj.stops.all().order_by("sequence")
+        pickup_stops = all_stops.filter(type="pickup")
+        dropoff_stops = all_stops.filter(type="dropoff")
+        intermediate_stops = all_stops.filter(type="intermediate")
 
-        pickup_city = "Unknown location"
-        dropoff_city = "Unknown location"
+        # Get first pickup and last dropoff for job title
+        first_pickup = pickup_stops.first()
+        last_dropoff = dropoff_stops.last()
 
-        if pickup_stop and pickup_stop.location:
-            pickup_city = pickup_stop.location.address
-        if dropoff_stop and dropoff_stop.location:
-            dropoff_city = dropoff_stop.location.address
+        # Build location description
+        location_parts = []
+        if first_pickup and first_pickup.location:
+            location_parts.append(f"from {first_pickup.location.address}")
+
+        if intermediate_stops.exists():
+            location_parts.append(
+                f"with {intermediate_stops.count()} intermediate stop(s)"
+            )
+
+        if last_dropoff and last_dropoff.location:
+            location_parts.append(f"to {last_dropoff.location.address}")
+
+        location_description = (
+            " ".join(location_parts) if location_parts else "Multiple locations"
+        )
 
         # Create job title and description
-        title = f"Moving Service Request #{request_obj.id}"
-        description = f"Moving service job created from request {request_obj.id}"
-        if request_obj.total_weight:
-            description = f"Moving {request_obj.total_weight}kg of items"
+        total_stops = all_stops.count()
+        title = f"Moving Service Request - {total_stops} stops"
 
-        # TODO A Function Determine if job should be instant (50% chance)
-        is_instant = random.choice([True, False])
+        description_parts = [
+            f"Moving service job created from request {request_obj.id}",
+            f"Total stops: {total_stops}",
+            f"Route: {location_description}",
+        ]
+
+        if request_obj.total_weight:
+            description_parts.insert(1, f"Total weight: {request_obj.total_weight}kg")
+
+        if pickup_stops.count() > 1:
+            description_parts.append(
+                f"Multiple pickups: {pickup_stops.count()} locations"
+            )
+
+        if dropoff_stops.count() > 1:
+            description_parts.append(
+                f"Multiple dropoffs: {dropoff_stops.count()} locations"
+            )
+
+        description = ". ".join(description_parts)
+
+        # Determine if job should be instant (50% chance, but consider complexity)
+        complexity_factor = min(total_stops / 10.0, 0.8)  # Max 80% complexity
+        instant_probability = max(0.2, 0.5 - complexity_factor)  # Min 20% chance
+        is_instant = random.random() < instant_probability
 
         # Create the job
-        base_price = 0.0
-        if request_obj.base_price is not None:
-            base_price = request_obj.base_price
+        base_price = request_obj.base_price or 0.0
+
+        # Adjust minimum bid based on complexity
+        if is_instant:
+            minimum_bid_multiplier = 0.8 + (
+                complexity_factor * 0.1
+            )  # 80-90% for instant
+        else:
+            minimum_bid_multiplier = 0.6 + (
+                complexity_factor * 0.2
+            )  # 60-80% for bidding
+
+        minimum_bid = base_price * minimum_bid_multiplier if base_price > 0 else None
 
         job = Job.objects.create(
             request=request_obj,
@@ -112,26 +251,13 @@ class Job(Basemodel):
             price=base_price,
             status="draft",
             is_instant=is_instant,
-            minimum_bid=request_obj.base_price * (0.8 if is_instant else 0.6),
+            minimum_bid=minimum_bid,
+            **kwargs,
         )
 
-        # Create timeline event
-        TimelineEvent.objects.create(
-            job=job,
-            event_type="created",
-            description="Job created after payment completion",
-            metadata={
-                "request_id": str(request_obj.id),
-                "is_instant": is_instant,
-                "payment_completed": True,
-            },
-        )
+        # The job_number will be automatically generated in the save() method
 
-        # Make the job either instant or biddable
-        if is_instant:
-            job.make_instant()
-        else:
-            job.make_biddable(bidding_duration_hours=24, minimum_bid=job.minimum_bid)
+        print(f"\033[92mJob created with number: {job.job_number}\033[0m")
 
         return job
 
@@ -151,7 +277,7 @@ class Job(Basemodel):
         self.save()
 
     def __str__(self):
-        return f"Job for {self.request.tracking_number}"
+        return f"{self.job_number} - {self.title}"
 
     def make_biddable(self, bidding_duration_hours=24, minimum_bid=None):
         """
@@ -218,7 +344,8 @@ class Job(Basemodel):
     def accept_bid(self, bid):
         """Accept a bid for this job"""
         if self.status == "bidding":
-            self.status = "accepted"
+            self.status = "assigned"
+            self.provider = bid.provider
             self.save()
             return True
         return False
@@ -453,3 +580,59 @@ class TimelineEvent(Basemodel):
 
     def __str__(self):
         return f"{self.get_event_type_display()} - {self.job.request.tracking_number}"
+
+
+class JobSerializer(serializers.ModelSerializer):
+    request = RequestSerializer(read_only=True)
+    request_id = serializers.CharField(write_only=True)
+    time_remaining = serializers.SerializerMethodField()
+    timeline_events = serializers.SerializerMethodField()
+    job_number = serializers.CharField(read_only=True)  # Add this if not auto-generated
+
+    class Meta:
+        model = Job
+        fields = [
+            "id",
+            "job_number",  # Add job number
+            "title",  # Add title
+            "description",  # Add description
+            "is_instant",  # Add instant flag
+            "request",
+            "request_id",
+            "status",
+            "is_completed",  # Add completion status
+            "price",
+            "minimum_bid",
+            "bidding_end_time",
+            "preferred_vehicle_types",
+            "required_qualifications",
+            "notes",
+            "assigned_provider",  # Add assigned provider
+            "time_remaining",
+            "timeline_events",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "job_number", "created_at", "updated_at"]
+
+    def get_time_remaining(self, obj):
+        if obj.bidding_end_time:
+            from django.utils import timezone
+
+            remaining = obj.bidding_end_time - timezone.now()
+            return max(0, remaining.total_seconds())
+        return None
+
+    def get_timeline_events(self, obj):
+        # Import here to avoid circular imports
+        from .services import JobTimelineService
+
+        # Get the requesting user
+        user = None
+        request = self.context.get("request")
+        if request and hasattr(request, "user"):
+            user = request.user
+
+        # Get timeline events with proper visibility filtering
+        events = JobTimelineService.get_job_timeline(job=obj, user=user)
+        return TimelineEventSerializer(events, many=True).data

@@ -20,6 +20,7 @@ class JobViewSet(viewsets.ModelViewSet):
     """
     ViewSet for viewing and editing Job instances.
     """
+
     queryset = Job.objects.all()
     serializer_class = JobSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -41,11 +42,11 @@ class JobViewSet(viewsets.ModelViewSet):
         request_id = self.request.data.get("request")
         request = Request.objects.get(id=request_id)
 
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=["post"])
     def make_biddable(self, request, pk=None):
         """
         Convert a job to a biddable job.
-        
+
         Expected request body:
         {
             "bidding_duration_hours": 24,  # Optional, defaults to 24
@@ -53,61 +54,64 @@ class JobViewSet(viewsets.ModelViewSet):
         }
         """
         job = self.get_object()
-        
+
         try:
-            bidding_duration_hours = int(request.data.get('bidding_duration_hours', 24))
-            minimum_bid = request.data.get('minimum_bid')
+            bidding_duration_hours = int(request.data.get("bidding_duration_hours", 24))
+            minimum_bid = request.data.get("minimum_bid")
             if minimum_bid:
                 minimum_bid = Decimal(str(minimum_bid))
-            
-            job.make_biddable(
-                bidding_duration_hours=bidding_duration_hours,
-                minimum_bid=minimum_bid
-            )
-            
-            return Response({
-                'status': 'success',
-                'message': 'Job converted to biddable',
-                'job': JobSerializer(job).data
-            })
-            
-        except ValueError as e:
-            return Response({
-                'status': 'error',
-                'message': str(e)
-            }, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            return Response({
-                'status': 'error',
-                'message': str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-    @action(detail=True, methods=['post'])
+            job.make_biddable(
+                bidding_duration_hours=bidding_duration_hours, minimum_bid=minimum_bid
+            )
+
+            return Response(
+                {
+                    "status": "success",
+                    "message": "Job converted to biddable",
+                    "job": JobSerializer(job).data,
+                }
+            )
+
+        except ValueError as e:
+            return Response(
+                {"status": "error", "message": str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as e:
+            return Response(
+                {"status": "error", "message": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    @action(detail=True, methods=["post"])
     def make_instant(self, request, pk=None):
         """
         Convert a job to an instant job.
         """
         job = self.get_object()
-        
+
         try:
             job.make_instant()
-            
-            return Response({
-                'status': 'success',
-                'message': 'Job converted to instant',
-                'job': JobSerializer(job).data
-            })
-            
+
+            return Response(
+                {
+                    "status": "success",
+                    "message": "Job converted to instant",
+                    "job": JobSerializer(job).data,
+                }
+            )
+
         except ValueError as e:
-            return Response({
-                'status': 'error',
-                'message': str(e)
-            }, status=status.HTTP_400_BAD_REQUEST)
+            return Response(
+                {"status": "error", "message": str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         except Exception as e:
-            return Response({
-                'status': 'error',
-                'message': str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"status": "error", "message": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
     @action(detail=True, methods=["post"])
     def accept_bid(self, request, pk=None):
@@ -194,6 +198,7 @@ class JobViewSet(viewsets.ModelViewSet):
     def assign_provider(self, request, pk=None):
         """Assign a provider to a job"""
         from apps.Provider.models import ServiceProvider
+
         job_id = request.query_params.get("job_id")
         job = Job.objects.get(id=job_id)
         provider_id = request.data.get("provider_id")
@@ -202,17 +207,9 @@ class JobViewSet(viewsets.ModelViewSet):
         job.save()
         return Response({"status": "Provider assigned"})
 
-class JobBidViewSet(viewsets.ModelViewSet):
-    serializer_class = BidSerializer
-    permission_classes = [IsAuthenticated]
-    queryset = Bid.objects.all()
-
-    def get_queryset(self):
-        user = self.request.user
-        if user.is_provider:
-            return Bid.objects.filter(provider=user.provider)
-        else:
-            return Bid.objects.filter(job__request__customer=user)
-
-    def perform_create(self, serializer):
-        serializer.save(provider=self.request.user.provider)
+    @action(detail=False, methods=["get"])
+    def bids(self, request, pk=None):
+        job_id = request.query_params.get("job_id")
+        job = Job.objects.get(id=job_id)
+        bids = job.bids.all()
+        return Response({"bids": BidSerializer(bids, many=True).data})
