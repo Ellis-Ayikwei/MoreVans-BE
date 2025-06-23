@@ -591,6 +591,9 @@ class Request(Basemodel):
         if self.status not in ["accepted", "in_transit"]:
             raise ValueError("Request must be accepted or in transit to confirm as job")
 
+        if self.job:
+            raise ValueError("Job Cretad Already")
+
         # Create a new job instance
         job = Job.objects.create(
             request=self,
@@ -901,9 +904,11 @@ class MoveMilestone(Basemodel):
         Checks if the request is confirmed and creates a job if it is.
         Returns the created job or None if not confirmed.
         """
+        from apps.Job.models import Job
+
         if self.status == "confirmed":
             # Check if a job already exists for this request
-            existing_job = self.jobs.first()
+            existing_job = self.job
             if existing_job:
                 return existing_job
 

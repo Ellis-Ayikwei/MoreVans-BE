@@ -194,22 +194,29 @@ class JobViewSet(viewsets.ModelViewSet):
         job.accept(request.user)
         return Response({"status": "Job accepted"})
 
-    @action(detail=False, methods=["get"])
+    @action(detail=True, methods=["post"])
     def assign_provider(self, request, pk=None):
         """Assign a provider to a job"""
         from apps.Provider.models import ServiceProvider
 
-        job_id = request.query_params.get("job_id")
-        job = Job.objects.get(id=job_id)
+        job = self.get_object()
         provider_id = request.data.get("provider_id")
         provider = ServiceProvider.objects.get(id=provider_id)
-        job.assigned_provider = provider
+        job.assign_provider(provider)
         job.save()
         return Response({"status": "Provider assigned"})
+    @action(detail=True, methods=["post"])
+    def unassign_provider(self, request, pk=None):
+        """Unassign a provider to a job"""
+        from apps.Provider.models import ServiceProvider
+
+        job = self.get_object()
+        job.unassign_provider()
+        job.save()
+        return Response({"status": "Provider unassigned"})
 
     @action(detail=False, methods=["get"])
     def bids(self, request, pk=None):
-        job_id = request.query_params.get("job_id")
-        job = Job.objects.get(id=job_id)
+        job = self.get_object()
         bids = job.bids.all()
         return Response({"bids": BidSerializer(bids, many=True).data})

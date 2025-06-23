@@ -24,8 +24,8 @@ class Job(Basemodel):
     ]
 
     is_instant = models.BooleanField(default=False)
-    request = models.ForeignKey(
-        "Request.Request", on_delete=models.CASCADE, related_name="jobs"
+    request = models.OneToOneField(
+        "Request.Request", on_delete=models.CASCADE, related_name="job"
     )
     title = models.CharField(max_length=255, blank=True, null=True)
     description = models.TextField(blank=True, null=True)
@@ -248,11 +248,10 @@ class Job(Basemodel):
             request=request_obj,
             title=title,
             description=description,
-            price=base_price,
+            price=kwargs["price"] if kwargs["price"] else base_price,
             status="draft",
-            is_instant=is_instant,
-            minimum_bid=minimum_bid,
-            **kwargs,
+            is_instant=kwargs["is_instant"] if kwargs["is_instant"] else is_instant,
+            minimum_bid= kwargs["minimum_bid"] if kwargs["minimum_bid"] else minimum_bid,
         )
 
         # The job_number will be automatically generated in the save() method
@@ -455,7 +454,7 @@ class Job(Basemodel):
         Raises:
             ValueError: If job is not in a valid state for provider assignment
         """
-        valid_states = ["pending", "bidding", "accepted"]
+        valid_states = ["draft", "pending", "bidding", "accepted"]
         if self.status not in valid_states:
             raise ValueError(f"Cannot assign provider in state: {self.status}")
 
@@ -479,6 +478,28 @@ class Job(Basemodel):
                 "provider_id": str(provider.id),
             },
         )
+    def unassign_provider(self, unassigned_by=None):
+        """
+        Unassign a provider to the job.
+
+        Args:
+            provider: The ServiceProvider instance to assign
+            assigned_by: The user making the assignment
+
+        Raises:
+            ValueError: If job is not in a valid state for provider assignment
+        """
+        valid_states = ["assigned"]
+        if self.status not in valid_states:
+            raise ValueError(f"Cannot unassign provider in state: {self.status}")
+
+        if not self.assigned_provider:
+            raise ValueError("No Provider is assigned yet")
+
+        old_status = self.status
+        self.status = "unassigned"
+        self.assigned_provider = None
+        self.save()
 
     def accept_job(self, accepted_by):
         """

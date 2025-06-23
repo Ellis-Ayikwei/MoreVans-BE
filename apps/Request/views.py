@@ -209,23 +209,33 @@ class RequestViewSet(viewsets.ModelViewSet):
             print("Confirming request as a job...", request.data)
             data = request.data
             instance = self.get_object()
-
+            price = data.get("price")
+            minimum_bid = data.get("minimum_bid")
+            is_instant = data.get("is_biddable")
             # Check if request can be confirmed as job
             if instance.status == "cancelled":
                 return Response(
                     {"error": "Cannot confirm cancelled request as job"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            elif instance.status == "confirmed":
+            elif (
+                instance.status == "confirmed"
+                and hasattr(instance, "job")
+                and instance.job
+            ):
                 return Response(
-                    {"errror": "Cannot confirm an already confirmed job"},
+                    {"error": "Cannot confirm an already confirmed job"},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
             # Use the Job model's create_job method
             from apps.Job.models import Job
-
-            job = Job.create_job(instance)
+            kwargs = {
+                "price": price,
+                "is_instant": True if is_instant==False else True,
+                "minimum_bid": minimum_bid
+            }
+            job = Job.create_job(instance, **kwargs)
 
             # Update request status to indicate job has been created
             instance.status = "confirmed"
