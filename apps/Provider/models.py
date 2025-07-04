@@ -456,6 +456,16 @@ class WatchedJob(Basemodel):
         return f"{self.provider.email} watching job #{self.job.id}"
 
 
+class ServiceProviderThrough(models.Model):
+    service = models.ForeignKey("Services.Services", on_delete=models.CASCADE)
+    provider = models.ForeignKey("Provider.ServiceProvider", on_delete=models.CASCADE)
+    # Add any additional fields if needed
+
+    class Meta:
+        db_table = "service_provider_through"
+        unique_together = ("service", "provider")
+
+
 # def VATNumberValidator(value):
 #     if not value:
 #         return

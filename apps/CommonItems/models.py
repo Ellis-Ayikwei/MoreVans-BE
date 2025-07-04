@@ -47,7 +47,7 @@ class CommonItem(Basemodel):
     tab_color = models.CharField(max_length=255, blank=True, help_text="Hex color code")
     image = models.URLField(blank=True, help_text="URL to item image")
     service_category = models.ForeignKey(
-        "ServiceCategory",  # Replace with the actual model name
+        "Services.ServiceCategory",  # Corrected app and model reference
         on_delete=models.SET_NULL,
         null=True,
         blank=True,

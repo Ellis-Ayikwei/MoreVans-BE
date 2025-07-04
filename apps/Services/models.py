@@ -29,7 +29,7 @@ class Services(Basemodel):
     )
     icon = models.CharField(max_length=30, null=True)
     providers = models.ManyToManyField(
-        "Provider.Provider", through="Provider.ServiceProvider"
+        "Provider.ServiceProvider", through="Provider.ServiceProviderThrough"
     )
 
     def __str__(self):
