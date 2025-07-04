@@ -141,6 +141,36 @@ class Command(BaseCommand):
             },
         }
 
+        # Mapping from item category to sub-service category name
+        category_to_service = {
+            "furniture": "Furniture & appliance delivery",
+            "electronics": "Furniture & appliance delivery",
+            "appliances": "Furniture & appliance delivery",
+            "musical": "Piano delivery",
+            "boxes": "Parcel delivery",
+            "fragile": "Specialist & antiques delivery",
+            "exercise": "Furniture & appliance delivery",
+            "garden": "Furniture & appliance delivery",
+            "office_supplies": "Office removals",
+            "kitchen_items": "Furniture & appliance delivery",
+            "bathroom": "Furniture & appliance delivery",
+            "seasonal": "Furniture & appliance delivery",
+            "storage": "Storage services",
+            "children": "Furniture & appliance delivery",
+            "art_hobbies": "Specialist & antiques delivery",
+            "sports": "Furniture & appliance delivery",
+            "oversized": "Heavy & large item delivery",
+            "tools_equipment": "Furniture & appliance delivery",
+            "automotive": "Car transport",
+            "collectibles": "Specialist & antiques delivery",
+            "books_media": "Parcel delivery",
+            "business_equipment": "Office removals",
+            "clothing_accessories": "Furniture & appliance delivery",
+            "outdoor_recreation": "Furniture & appliance delivery",
+            "medical_equipment": "Furniture & appliance delivery",
+            "home_decor": "Furniture & appliance delivery",
+        }
+
         # Common moving "items" data structure
         common_items = [
             {
@@ -151,7 +181,7 @@ class Command(BaseCommand):
                         "dimensions": "200 × 90 × 90 cm",
                         "weight": "45",
                         "needs_disassembly": False,
-                        "fragile": False,
+                        "fragile": False
                     },
                     {
                         "name": "Loveseat (2-seater)",
@@ -2054,6 +2084,16 @@ class Command(BaseCommand):
                     needs_disassembly = item_data.get("needs_disassembly", False)
                     fragile = item_data.get("fragile", False)
 
+                    # Look up the service category for this item (sub-service category)
+                    service_category_name = category_to_service.get(category_name)
+                    service_category_obj = None
+                    if service_category_name:
+                        from apps.Services.models import ServiceCategory
+                        try:
+                            service_category_obj = ServiceCategory.objects.get(name=service_category_name)
+                        except ServiceCategory.DoesNotExist:
+                            self.stdout.write(self.style.WARNING(f"ServiceCategory '{service_category_name}' not found for item category '{category_name}'. Leaving blank."))
+
                     # Create the item type
                     item_type, created = CommonItem.objects.get_or_create(
                         name=item_data["name"],
@@ -2063,6 +2103,7 @@ class Command(BaseCommand):
                             "weight": weight,
                             "needs_disassembly": needs_disassembly,
                             "fragile": fragile,
+                            "service_category": service_category_obj,
                         },
                     )
 

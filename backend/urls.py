@@ -51,51 +51,51 @@ router.register(r"maintenance-records", MaintenanceRecordViewSet)
 router.register(r"jobs", JobViewSet)
 
 urlpatterns = [
-    # Geocoding endpoints outside API path to bypass authentication issues
-    path(
-        "geocoding/google-autocomplete/",
-        google_address_autocomplete_simple,
-        name="geocoding_google_autocomplete",
-    ),
-    path(
-        "geocoding/postcode-suggestions/",
-        postcode_suggestions_simple,
-        name="geocoding_postcode_suggestions",
-    ),
-    path(
-        "geocoding/google-place-details/",
-        google_place_details,
-        name="geocoding_google_place_details",
-    ),
-    path(
-        "geocoding/geocode-address/", geocode_address, name="geocoding_geocode_address"
-    ),
-    path(
-        "geocoding/postcode-addresses-simple/",
-        postcode_address_lookup,
-        name="geocoding_postcode_addresses_simple",
-    ),
-    path(
-        "geocoding/postcode-addresses/",
-        postcode_address_lookup_enhanced,
-        name="geocoding_postcode_addresses",
-    ),
-    path(
-        "geocoding/postcode-addresses-demo/",
-        simple_postcode_addresses,
-        name="geocoding_postcode_addresses_demo",
-    ),
-    # Test endpoint outside API path
-    path(
-        "test/google-autocomplete/",
-        google_address_autocomplete_simple,
-        name="test_google_autocomplete",
-    ),
-    # API routes with prefix
-    path(
-        "morevans/api/v1/",
-        include(
-            [
+            # Geocoding endpoints outside API path to bypass authentication issues
+            
+            # API routes with prefix
+            path(
+                "morevans/api/v1/",
+                include(
+                [path(
+                    "geocoding/google-autocomplete/",
+                    google_address_autocomplete_simple,
+                    name="geocoding_google_autocomplete",
+                ),
+                path(
+                    "geocoding/postcode-suggestions/",
+                    postcode_suggestions_simple,
+                    name="geocoding_postcode_suggestions",
+                ),
+                path(
+                    "geocoding/google-place-details/",
+                    google_place_details,
+                    name="geocoding_google_place_details",
+                ),
+                path(
+                    "geocoding/geocode-address/", geocode_address, name="geocoding_geocode_address"
+                ),
+                path(
+                    "geocoding/postcode-addresses-simple/",
+                    postcode_address_lookup,
+                    name="geocoding_postcode_addresses_simple",
+                ),
+                path(
+                    "geocoding/postcode-addresses/",
+                    postcode_address_lookup_enhanced,
+                    name="geocoding_postcode_addresses",
+                ),
+                path(
+                    "geocoding/postcode-addresses-demo/",
+                    simple_postcode_addresses,
+                    name="geocoding_postcode_addresses_demo",
+                ),
+                # Test endpoint outside API path
+                path(
+                    "test/google-autocomplete/",
+                    google_address_autocomplete_simple,
+                    name="test_google_autocomplete",
+                ),
                 path("admin/", admin.site.urls),
                 # Include router URLs
                 path("", include(router.urls)),

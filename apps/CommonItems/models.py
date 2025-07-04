@@ -17,7 +17,6 @@ class ItemCategory(Basemodel):
         max_length=100, blank=True, help_text="FontAwesome icon name"
     )
     image = models.URLField(blank=True, help_text="URL to category image")
-
     color = models.CharField(max_length=255, blank=True, help_text="Hex color code")
     tab_color = models.CharField(max_length=255, blank=True, help_text="Hex color code")
 
@@ -42,9 +41,18 @@ class CommonItem(Basemodel):
     icon = models.CharField(
         max_length=100, blank=True, help_text="FontAwesome icon name"
     )
+    model = models.CharField(max_length=100, blank=True, help_text="Model name")
+    brand = models.CharField(max_length=100, blank=True, help_text="Brand name")
     color = models.CharField(max_length=255, blank=True, help_text="Hex color code")
     tab_color = models.CharField(max_length=255, blank=True, help_text="Hex color code")
     image = models.URLField(blank=True, help_text="URL to item image")
+    service_category = models.ForeignKey(
+        "ServiceCategory",  # Replace with the actual model name
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text="Service category for this category of items",
+    )
 
     def __str__(self):
         return self.name

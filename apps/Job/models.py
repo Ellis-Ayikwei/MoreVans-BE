@@ -454,7 +454,7 @@ class Job(Basemodel):
         Raises:
             ValueError: If job is not in a valid state for provider assignment
         """
-        valid_states = ["draft", "pending", "bidding", "accepted"]
+        valid_states = ["draft", "pending", "bidding", "accepted", "unassigned"]
         if self.status not in valid_states:
             raise ValueError(f"Cannot assign provider in state: {self.status}")
 
