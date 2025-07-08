@@ -181,7 +181,7 @@ class Command(BaseCommand):
                         "dimensions": "200 × 90 × 90 cm",
                         "weight": "45",
                         "needs_disassembly": False,
-                        "fragile": False
+                        "fragile": False,
                     },
                     {
                         "name": "Loveseat (2-seater)",
@@ -2089,10 +2089,17 @@ class Command(BaseCommand):
                     service_category_obj = None
                     if service_category_name:
                         from apps.Services.models import ServiceCategory
+
                         try:
-                            service_category_obj = ServiceCategory.objects.get(name=service_category_name)
+                            service_category_obj = ServiceCategory.objects.get(
+                                name=service_category_name
+                            )
                         except ServiceCategory.DoesNotExist:
-                            self.stdout.write(self.style.WARNING(f"ServiceCategory '{service_category_name}' not found for item category '{category_name}'. Leaving blank."))
+                            self.stdout.write(
+                                self.style.WARNING(
+                                    f"ServiceCategory '{service_category_name}' not found for item category '{category_name}'. Leaving blank."
+                                )
+                            )
 
                     # Create the item type
                     item_type, created = CommonItem.objects.get_or_create(

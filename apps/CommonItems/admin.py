@@ -1,5 +1,10 @@
-# from django.contrib import admin
-# from .models import CommonItem, ItemCategory
+from django.contrib import admin
+from .models import (
+    CommonItem,
+    ItemCategory,
+    ItemBrand,
+    ItemModel,
+)
 
 # @admin.register(CommonItem)
 # class CommonItemAdmin(admin.ModelAdmin):

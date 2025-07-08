@@ -14,12 +14,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 
 # Import the ViewSets from Vehicle and Driver apps
-from apps.Vehicle.views import (
-    VehicleViewSet,
-    VehicleDocumentViewSet,
-    VehicleInspectionViewSet,
-    MaintenanceRecordViewSet,
-)
+from apps.Vehicle.views import VehicleViewSet, VehicleDocumentViewSet
 from apps.Driver.views import (
     DriverViewSet,
     DriverLocationViewSet,
@@ -44,20 +39,18 @@ router = routers.DefaultRouter(trailing_slash=True)
 # Register Vehicle app ViewSets
 router.register(r"vehicles", VehicleViewSet)
 router.register(r"vehicle-documents", VehicleDocumentViewSet)
-router.register(r"vehicle-inspections", VehicleInspectionViewSet)
-router.register(r"maintenance-records", MaintenanceRecordViewSet)
 
 
 router.register(r"jobs", JobViewSet)
 
 urlpatterns = [
-            # Geocoding endpoints outside API path to bypass authentication issues
-            
-            # API routes with prefix
-            path(
-                "morevans/api/v1/",
-                include(
-                [path(
+    # Geocoding endpoints outside API path to bypass authentication issues
+    # API routes with prefix
+    path(
+        "morevans/api/v1/",
+        include(
+            [
+                path(
                     "geocoding/google-autocomplete/",
                     google_address_autocomplete_simple,
                     name="geocoding_google_autocomplete",
@@ -73,7 +66,9 @@ urlpatterns = [
                     name="geocoding_google_place_details",
                 ),
                 path(
-                    "geocoding/geocode-address/", geocode_address, name="geocoding_geocode_address"
+                    "geocoding/geocode-address/",
+                    geocode_address,
+                    name="geocoding_geocode_address",
                 ),
                 path(
                     "geocoding/postcode-addresses-simple/",
@@ -121,7 +116,10 @@ urlpatterns = [
                 path("", include("apps.Provider.urls")),
                 path("", include("apps.Driver.urls")),
                 path("", include("apps.Bidding.urls")),
-                path("", include("apps.Message.urls")),  # Add this line
+                path("", include("apps.CommonItems.urls")),
+                path("", include("apps.Message.urls")),
+                path("", include("apps.Services.urls")),
+                path("", include("apps.Vehicle.urls")),
                 # Media files under API prefix
                 *static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT),
             ]

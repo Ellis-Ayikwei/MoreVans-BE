@@ -47,21 +47,21 @@ class ServiceProviderViewSet(viewsets.ModelViewSet):
             return queryset.filter(user=self.request.user)
         return queryset
 
-    @action(detail=True, methods=["post"])
+    @action(detail=True, methods=["post", "patch"])
     def activate(self, request, pk=None):
         provider = self.get_object()
         provider.status = "active"
         provider.save()
         return Response({"status": "provider activated"})
 
-    @action(detail=True, methods=["post"])
+    @action(detail=True, methods=["post", "patch"])
     def suspend(self, request, pk=None):
         provider = self.get_object()
         provider.status = "suspended"
         provider.save()
         return Response({"status": "provider suspended"})
 
-    @action(detail=True, methods=["post"])
+    @action(detail=True, methods=["post", "patch"])
     def verify(self, request, pk=None):
         provider = self.get_object()
         provider.verification_status = "verified"

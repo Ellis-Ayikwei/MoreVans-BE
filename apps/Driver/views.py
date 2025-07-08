@@ -37,7 +37,18 @@ class DriverViewSet(viewsets.ModelViewSet):
         has_cpc = self.request.query_params.get("has_cpc", None)
 
         if provider_id:
-            queryset = queryset.filter(provider_id=provider_id)
+            # Handle case where frontend sends [object Object] instead of UUID
+            if provider_id == "[object Object]" or not provider_id:
+                return queryset.none()  # Return empty queryset if invalid provider
+            try:
+                # Validate that provider_id is a valid UUID
+                import uuid
+
+                uuid.UUID(provider_id)
+                queryset = queryset.filter(provider_id=provider_id)
+            except (ValueError, TypeError):
+                # If provider_id is not a valid UUID, return empty queryset
+                return queryset.none()
         if status_param:
             queryset = queryset.filter(status=status_param)
         if employment_type:
