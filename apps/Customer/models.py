@@ -1,10 +1,11 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+from apps.Basemodel.models import Basemodel
 from phonenumber_field.modelfields import PhoneNumberField
 from django.contrib.gis.db import models as gis_models
 
 
-class CustomerProfile(models.Model):
+class CustomerProfile(Basemodel):
     user = models.OneToOneField(
         "User",
         on_delete=models.CASCADE,
@@ -170,7 +171,7 @@ class CustomerProfile(models.Model):
 
 
 # Related Models (in same file or separate)
-class MovingRequest(models.Model):
+class MovingRequest(Basemodel):
     customer = models.ForeignKey(
         CustomerProfile, on_delete=models.CASCADE, related_name="moving_requests"
     )
@@ -183,7 +184,7 @@ class MovingRequest(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
-class Quote(models.Model):
+class Quote(Basemodel):
     customer = models.ForeignKey(
         CustomerProfile, on_delete=models.CASCADE, related_name="quotes"
     )
@@ -193,7 +194,7 @@ class Quote(models.Model):
     status = models.CharField(max_length=20, default="pending")
 
 
-class Shipment(models.Model):
+class Shipment(Basemodel):
     customer = models.ForeignKey(
         CustomerProfile, on_delete=models.CASCADE, related_name="shipments"
     )
@@ -204,7 +205,7 @@ class Shipment(models.Model):
     driver_contact_info = models.JSONField()
 
 
-class ShipmentRating(models.Model):
+class ShipmentRating(Basemodel):
     shipment = models.OneToOneField(Shipment, on_delete=models.CASCADE)
     rating = models.PositiveSmallIntegerField()
     review = models.TextField(blank=True)

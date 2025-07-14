@@ -10,23 +10,27 @@ from .views import (
     RegisterAPIView,
     TokenRefreshView,
     TokenVerifyView,
-    UserViewSet
+    UserViewSet,
 )
 
 # Create a router for the UserViewSet
 router = DefaultRouter()
-router.register(r'users', UserViewSet, basename='user')
+router.register(r"users", UserViewSet, basename="user")
 
 urlpatterns = [
-    path('', include(router.urls)),
-    path('register/', RegisterAPIView.as_view(), name='register'),
-    path('login/', LoginAPIView.as_view(), name='token_obtain_pair'),
-    path('logout/', LogoutAPIView.as_view(), name='logout'),
-    path('recover_password/', PasswordRecoveryAPIView.as_view(), name='token_obtain_pair'),
-    path('reset_password/<uidb64>/<token>/', PasswordResetConfirmAPIView.as_view(), name='password_reset_confirm'),
-    path('change_password/', PasswordChangeAPIView.as_view(), name='change_password'),
-    path('refresh_token/', TokenRefreshView.as_view(), name='token_refresh'),
-    path('verify_token/', TokenVerifyView.as_view(), name='token_verify'),
+    path("", include(router.urls)),
+    path("register/", RegisterAPIView.as_view(), name="register"),
+    path("login/", LoginAPIView.as_view(), name="token_obtain_pair"),
+    path("logout/", LogoutAPIView.as_view(), name="logout"),
+    path(
+        "forget_password/", PasswordRecoveryAPIView.as_view(), name="token_obtain_pair"
+    ),
+    path(
+        "reset_password/<uidb64>/<token>/",
+        PasswordResetConfirmAPIView.as_view(),
+        name="password_reset_confirm",
+    ),
+    path("change_password/", PasswordChangeAPIView.as_view(), name="change_password"),
+    path("refresh_token/", TokenRefreshView.as_view(), name="token_refresh"),
+    path("verify_token/", TokenVerifyView.as_view(), name="token_verify"),
 ]
-
-

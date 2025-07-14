@@ -43,6 +43,7 @@ from .services import PricingService
 
 class PricingFactorViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.AllowAny]
+    authentication_classes = []
 
     # def get_permissions(self):
     #     if self.action in ["create", "update", "partial_update", "destroy"]:
@@ -110,11 +111,17 @@ class LoadingTimePricingViewSet(PricingFactorViewSet):
     serializer_class = LoadingTimePricingSerializer
 
 
+# ------------------------------------
+# Pricing Config
+# ------------------------------------
+
+
 class PricingConfigurationViewSet(viewsets.ModelViewSet):
     queryset = PricingConfiguration.objects.all()
     serializer_class = PricingConfigurationSerializer
     # permission_classes = [permissions.IsAdminUser]
     permission_classes = [permissions.AllowAny]
+    authentication_classes = []
     http_method_names = [
         "get",
         "post",
@@ -174,7 +181,7 @@ class PricingConfigurationViewSet(viewsets.ModelViewSet):
                     "configuration": self.get_serializer(config).data,
                 }
             )
-        except PricingConfiguration.DoesNotExist:
+        except PricingConfiguration.DoesNotExist:  # noqa: E1101
             return Response(
                 {"error": "Configuration not found"}, status=status.HTTP_404_NOT_FOUND
             )
@@ -546,9 +553,10 @@ class PricingConfigurationViewSet(viewsets.ModelViewSet):
         return 1.0
 
 
-class AdminPricingFactorsViewSet(viewsets.ViewSet):
+class PricingFactorsViewSet(viewsets.ViewSet):
     """ViewSet to get/update all pricing factors for admin purposes."""
 
+    authentication_classes = []
     permission_classes = [
         permissions.AllowAny
     ]  # For development, change to IsAuthenticated/IsAdminUser for production
@@ -588,12 +596,17 @@ class AdminPricingFactorsViewSet(viewsets.ViewSet):
     def _serialize_model(self, model_class, active_config=None):
         """Helper to serialize all instances of a model class"""
         serializer_class = self._get_serializer_for_model(model_class)
+        if serializer_class is None:
+            raise ValueError(f"No serializer found for model {model_class.__name__}")
         instances = model_class.objects.all()
 
         # Use context={'request': None} to prevent URL generation
         serialized_data = serializer_class(
             instances, many=True, context={"request": None}
         ).data
+
+        # Debug: Print the serialized data to see what's being returned
+        print(f"DEBUG - {model_class.__name__} serialized data:", serialized_data)
 
         # If we have an active config, mark which factors are associated with it
         if active_config and model_class != PricingConfiguration:
@@ -633,6 +646,19 @@ class AdminPricingFactorsViewSet(viewsets.ViewSet):
         if model_name == "PricingConfiguration":
             return PricingConfigurationSerializer
         else:
-            # Use CamelCase naming convention to match your imports
-            serializer_name = f"{model_name}Serializer"
-            return globals()[serializer_name]
+            # Map model names to their corresponding serializers
+            serializer_map = {
+                "DistancePricing": DistancePricingSerializer,
+                "WeightPricing": WeightPricingSerializer,
+                "TimePricing": TimePricingSerializer,
+                "WeatherPricing": WeatherPricingSerializer,
+                "VehicleTypePricing": VehicleTypePricingSerializer,
+                "SpecialRequirementsPricing": SpecialRequirementsPricingSerializer,
+                "LocationPricing": LocationPricingSerializer,
+                "ServiceLevelPricing": ServiceLevelPricingSerializer,
+                "StaffRequiredPricing": StaffRequiredPricingSerializer,
+                "PropertyTypePricing": PropertyTypePricingSerializer,
+                "InsurancePricing": InsurancePricingSerializer,
+                "LoadingTimePricing": LoadingTimePricingSerializer,
+            }
+            return serializer_map.get(model_name)

@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
 
-# Create two separate routers - one for regular factor endpoints, one for admin
+# Create router for all pricing factor viewsets
 factor_router = DefaultRouter(trailing_slash=True)
 factor_router.register(r"distance", views.DistancePricingViewSet)
 factor_router.register(r"weight", views.WeightPricingViewSet)
@@ -17,39 +17,27 @@ factor_router.register(r"property-type", views.PropertyTypePricingViewSet)
 factor_router.register(r"insurance", views.InsurancePricingViewSet)
 factor_router.register(r"loading-time", views.LoadingTimePricingViewSet)
 
-# Register admin viewset
-admin_router = DefaultRouter(trailing_slash=True)
-admin_router.register(
+# Create router for admin viewsets
+factors_router = DefaultRouter(trailing_slash=True)
+factors_router.register(
     r"pricing-factors",
-    views.AdminPricingFactorsViewSet,
-    basename="admin-pricing-factors",
+    views.PricingFactorsViewSet,
+    basename="pricing-factors",
+)
+
+# Create router for pricing configurations
+config_router = DefaultRouter(trailing_slash=True)
+config_router.register(
+    r"price-configurations",
+    views.PricingConfigurationViewSet,
+    basename="price-configuration",
 )
 
 urlpatterns = [
-    # Include standard factor routes directly
-    path("", include(factor_router.urls)),
-    # Admin routes
-    path("admin/", include(admin_router.urls)),
-    path(
-        "admin/pricing/factors/",
-        views.AdminPricingFactorsViewSet.as_view({"get": "list"}),
-        name="admin-pricing-factors",
-    ),
-    path(
-        "admin/price-configurations/",
-        views.PricingConfigurationViewSet.as_view({"get": "list", "post": "create"}),
-        name="admin-price-configuration",
-    ),
-    path(
-        "admin/price-configuration/<str:pk>/",
-        views.PricingConfigurationViewSet.as_view(
-            {
-                "get": "retrieve",
-                "put": "update",
-                "patch": "partial_update",
-                "delete": "destroy",
-            }
-        ),
-        name="admin-price-configuration-detail",
-    ),
+    # Include all pricing factor routes
+    path("pricing/factors/", include(factor_router.urls)),
+    # Include admin routes
+    path("", include(factors_router.urls)),
+    # Include pricing configuration routes
+    path("", include(config_router.urls)),
 ]

@@ -579,54 +579,148 @@ class UserManagementViewSet(viewsets.ModelViewSet):
 
         return Response(data)
 
-
-@action(
-    detail=False, methods=["get"], permission_classes=[IsAdminUser | IsSuperAdminUser]
-)
-def advanced_stats(self, request):
-    """
-    Enhanced statistics including group and permission data.
-    """
-    basic_stats = self.stats(request).data
-
-    # Group statistics
-    total_groups = Group.objects.count()
-    groups_with_users = (
-        Group.objects.annotate(user_count=Count("user"))
-        .filter(user_count__gt=0)
-        .count()
+    @action(
+        detail=True,
+        methods=["post"],
+        permission_classes=[permissions.IsAuthenticated, permissions.IsAdminUser],
     )
+    def admin_change_password(self, request, pk=None):
+        """
+        Change user's password.
+        Users can only change their own password unless they are admin.
+        """
+        user = self.get_object()
 
-    # Users by group
-    group_stats = []
-    for group in Group.objects.annotate(user_count=Count("user")):
-        group_stats.append({"group_name": group.name, "user_count": group.user_count})
+        # Check if user is changing their own password or is admin
+        if user.id != request.user.id and not (
+            request.user.user_type in ["admin"] or request.user.is_superuser
+        ):
+            return Response(
+                {"detail": "You can only change your own password."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
-    # Permission usage
-    permissions_in_use = (
-        Permission.objects.filter(Q(group__isnull=False) | Q(user__isnull=False))
-        .distinct()
-        .count()
+        # Import the serializer from Authentication app
+        from apps.Authentication.serializer import PasswordChangeSerializer
+
+        serializer = PasswordChangeSerializer(data=request.data, context={"user": user})
+        if serializer.is_valid():
+            user.set_password(serializer.validated_data["new_password"])
+            user.save()
+            return Response(
+                {"detail": "Password updated successfully"},
+                status=status.HTTP_200_OK,
+            )
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(
+        detail=True,
+        methods=["post"],
+        permission_classes=[permissions.IsAuthenticated, permissions.IsAdminUser],
     )
+    def send_reset_password_link(self, request, pk=None):
+        """
+        Admin action to send a password reset link to the user with the given pk.
+        """
+        import os
+        from django.contrib.auth.tokens import PasswordResetTokenGenerator
+        from django.core.mail import send_mail
+        from django.conf import settings
+        from django.utils.encoding import force_bytes
+        from django.utils.http import urlsafe_base64_encode
+        from django.urls import reverse
 
-    total_permissions = Permission.objects.count()
+        user = self.get_object()
+        email_sent = False
 
-    enhanced_stats = {
-        **basic_stats,
-        "groups": {
-            "total_groups": total_groups,
-            "groups_with_users": groups_with_users,
-            "empty_groups": total_groups - groups_with_users,
-            "group_breakdown": group_stats,
-        },
-        "permissions": {
-            "total_permissions": total_permissions,
-            "permissions_in_use": permissions_in_use,
-            "unused_permissions": total_permissions - permissions_in_use,
-        },
-    }
+        if user:
+            token_generator = PasswordResetTokenGenerator()
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            token = token_generator.make_token(user)
 
-    return Response(enhanced_stats)
+            frontend_base_url = os.getenv("FRONTEND_URL")
+            frontend_url = f"{frontend_base_url}/reset-password/{uid}/{token}"
+            absolute_url = frontend_url
+            try:
+                send_mail(
+                    "Password Reset Request",
+                    f"Use this link to reset your password: {absolute_url}",
+                    getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@example.com"),
+                    [user.email],
+                    fail_silently=False,
+                )
+                email_sent = True
+            except Exception as e:
+                import logging
+
+                logger = logging.getLogger(__name__)
+                logger.error(f"Email Error in admin-triggered password reset: {str(e)}")
+                email_sent = False
+
+        if email_sent:
+            return Response(
+                {"detail": "Password reset link sent successfully"},
+                status=status.HTTP_200_OK,
+            )
+        else:
+            return Response(
+                {
+                    "detail": "Password reset link could not be sent. Please try again later."
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    @action(
+        detail=False,
+        methods=["get"],
+        permission_classes=[IsAdminUser | IsSuperAdminUser],
+    )
+    def advanced_stats(self, request):
+        """
+        Enhanced statistics including group and permission data.
+        """
+        basic_stats = self.stats(request).data
+
+        # Group statistics
+        total_groups = Group.objects.count()
+        groups_with_users = (
+            Group.objects.annotate(user_count=Count("user"))
+            .filter(user_count__gt=0)
+            .count()
+        )
+
+        # Users by group
+        group_stats = []
+        for group in Group.objects.annotate(user_count=Count("user")):
+            group_stats.append(
+                {"group_name": group.name, "user_count": group.user_count}
+            )
+
+        # Permission usage
+        permissions_in_use = (
+            Permission.objects.filter(Q(group__isnull=False) | Q(user__isnull=False))
+            .distinct()
+            .count()
+        )
+
+        total_permissions = Permission.objects.count()
+
+        enhanced_stats = {
+            **basic_stats,
+            "groups": {
+                "total_groups": total_groups,
+                "groups_with_users": groups_with_users,
+                "empty_groups": total_groups - groups_with_users,
+                "group_breakdown": group_stats,
+            },
+            "permissions": {
+                "total_permissions": total_permissions,
+                "permissions_in_use": permissions_in_use,
+                "unused_permissions": total_permissions - permissions_in_use,
+            },
+        }
+
+        return Response(enhanced_stats)
 
 
 class AddressViewSet(viewsets.ModelViewSet):
@@ -780,7 +874,7 @@ class GroupManagementViewSet(viewsets.ModelViewSet):
                 {"detail": "No valid users found"}, status=status.HTTP_400_BAD_REQUEST
             )
 
-        group.user_set.add(*users)
+        group.custom_user_set.add(*users)
 
         logger.info(
             f"Added {added_count} users to group {group.name} by admin {request.user.id}"
@@ -813,7 +907,7 @@ class GroupManagementViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        group.user_set.remove(*users)
+        group.custom_user_set.remove(*users)
 
         logger.info(
             f"Removed {removed_count} users from group {group.name} by admin {request.user.id}"
@@ -936,7 +1030,7 @@ class UserGroupManagementViewSet(viewsets.ViewSet):
 
         with transaction.atomic():
             for group in groups:
-                group.user_set.add(*users)
+                group.custom_user_set.add(*users)
 
         logger.info(
             f"Bulk added {users.count()} users to {groups.count()} groups by admin {request.user.id}"
@@ -970,7 +1064,7 @@ class UserGroupManagementViewSet(viewsets.ViewSet):
 
         with transaction.atomic():
             for group in groups:
-                group.user_set.remove(*users)
+                group.custom_user_set.remove(*users)
 
         logger.info(
             f"Bulk removed {users.count()} users from {groups.count()} groups by admin {request.user.id}"

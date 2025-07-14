@@ -27,6 +27,9 @@ from apps.JourneyStop.models import JourneyStop
 from apps.Location.models import Location
 from apps.RequestItems.models import RequestItem
 from apps.CommonItems.models import ItemCategory
+import os
+import requests
+from apps.Location.services import get_distance_and_travel_time
 
 
 class RequestViewSet(viewsets.ModelViewSet):
@@ -177,13 +180,30 @@ class RequestViewSet(viewsets.ModelViewSet):
                 {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+    def get_estimated_duration(self, obj):
+        """Return estimated duration in human-readable format"""
+        if obj.estimated_duration:
+            total_seconds = int(obj.estimated_duration.total_seconds())
+            hours = total_seconds // 3600
+            minutes = (total_seconds % 3600) // 60
+            seconds = total_seconds % 60
+
+            if hours > 0:
+                return f"{hours}h {minutes}m {seconds}s"
+            elif minutes > 0:
+                return f"{minutes}m {seconds}s"
+            else:
+                return f"{seconds}s"
+        return None
+
     def create(self, request, *args, **kwargs):
         """Create a new request in draft status with minimal data"""
+
         try:
             # Create a mutable copy of the data
             data = request.data.copy()
             print("Creating request with data:", json.dumps(data, indent=4))
-            data["status"] = "draft"  # Set initial status to draft
+            data["status"] = "draft"
 
             # Create the request using serializer
             serializer = self.get_serializer(data=data)
@@ -191,12 +211,65 @@ class RequestViewSet(viewsets.ModelViewSet):
             print("serializer clean about to save", serializer.validated_data)
             instance = serializer.save()
 
+            # --- New logic: update estimated distance/time/fuel if locations are present ---
+            stops = instance.stops.order_by("sequence").select_related("location")
+            locations = [
+                s.location
+                for s in stops
+                if s.location and s.location.latitude and s.location.longitude
+            ]
+            if len(locations) >= 2:
+                try:
+                    result = get_distance_and_travel_time(locations)
+                    print(f"[Request] Distance API result: {result}")
+                    distance_miles = result["distance"]  # Already in miles
+                    duration_sec = result["duration"]
+                    fuel_used = result["estimated_fuel_liters"]
+                    instance.estimated_distance = distance_miles
+                    instance.estimated_fuel_consumption = fuel_used
+                    instance.estimated_duration = timedelta(seconds=duration_sec)
+                    if (
+                        hasattr(instance, "preferred_pickup_date")
+                        and instance.preferred_pickup_date
+                    ):
+                        from datetime import datetime
+                        from django.utils import timezone
+
+                        start_dt = datetime.combine(
+                            instance.preferred_pickup_date, datetime.min.time()
+                        )
+                        instance.estimated_completion_time = start_dt + timedelta(
+                            seconds=duration_sec
+                        )
+                    else:
+                        from django.utils import timezone
+
+                        instance.estimated_completion_time = timezone.now() + timedelta(
+                            seconds=duration_sec
+                        )
+                    instance.save(
+                        update_fields=[
+                            "estimated_distance",
+                            "estimated_fuel_consumption",
+                            "estimated_duration",
+                            "estimated_completion_time",
+                        ]
+                    )
+                except Exception as e:
+                    print(f"OpenRouteService error: {e}")
+
             # Return the essential data
             return Response(
                 {
                     "message": "Request created successfully",
                     "request_id": instance.id,
                     "tracking_number": instance.tracking_number,
+                    "estimated_distance": (
+                        round(instance.estimated_distance, 2)
+                        if instance.estimated_distance
+                        else None
+                    ),
+                    "estimated_duration": self.get_estimated_duration(instance),
                 },
                 status=status.HTTP_201_CREATED,
             )
@@ -230,10 +303,11 @@ class RequestViewSet(viewsets.ModelViewSet):
 
             # Use the Job model's create_job method
             from apps.Job.models import Job
+
             kwargs = {
                 "price": price,
-                "is_instant": True if is_instant==False else True,
-                "minimum_bid": minimum_bid
+                "is_instant": True if is_instant == False else True,
+                "minimum_bid": minimum_bid,
             }
             job = Job.create_job(instance, **kwargs)
 
@@ -321,7 +395,7 @@ class RequestViewSet(viewsets.ModelViewSet):
             print(f"Step 1 error: {str(e)}")
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=True, methods=["patch", "put"])
+    @action(detail=True, methods=["post", "put", "patch"])
     def submit_step2(self, request, pk=None):
         """Handle step 2 submission (Locations)"""
         try:
@@ -348,6 +422,33 @@ class RequestViewSet(viewsets.ModelViewSet):
                 serializer = self.get_serializer(instance, data=data, partial=True)
                 serializer.is_valid(raise_exception=True)
                 serializer.save()
+
+            # --- Refactored: use get_distance_and_travel_time ---
+            stops = instance.stops.order_by("sequence").select_related("location")
+            locations = [
+                s.location
+                for s in stops
+                if s.location and s.location.latitude and s.location.longitude
+            ]
+            if len(locations) >= 2:
+                try:
+                    result = get_distance_and_travel_time(locations)
+                    print(f"[Request] Distance API result: {result}")
+                    distance_miles = result["distance"]  # Already in miles
+                    duration_sec = result["duration"]
+                    fuel_used = result["estimated_fuel_liters"]
+                    instance.estimated_distance = distance_miles
+                    instance.estimated_fuel_consumption = fuel_used
+                    instance.estimated_duration = timedelta(seconds=duration_sec)
+                    instance.save(
+                        update_fields=[
+                            "estimated_distance",
+                            "estimated_fuel_consumption",
+                            "estimated_duration",
+                        ]
+                    )
+                except Exception as e:
+                    print(f"OpenRouteService error: {e}")
 
             return Response(
                 {"message": "Step 2 submitted successfully", "request_id": instance.id},
@@ -484,6 +585,33 @@ class RequestViewSet(viewsets.ModelViewSet):
             serializer.save()
 
             serializer.save()
+
+            # --- Refactored: use get_distance_and_travel_time ---
+            stops = instance.stops.order_by("sequence").select_related("location")
+            locations = [
+                s.location
+                for s in stops
+                if s.location and s.location.latitude and s.location.longitude
+            ]
+            if len(locations) >= 2:
+                try:
+                    result = get_distance_and_travel_time(locations)
+                    print(f"[Request] Distance API result: {result}")
+                    distance_miles = result["distance"]  # Already in miles
+                    duration_sec = result["duration"]
+                    fuel_used = result["estimated_fuel_liters"]
+                    instance.estimated_distance = distance_miles
+                    instance.estimated_fuel_consumption = fuel_used
+                    instance.estimated_duration = timedelta(seconds=duration_sec)
+                    instance.save(
+                        update_fields=[
+                            "estimated_distance",
+                            "estimated_fuel_consumption",
+                            "estimated_duration",
+                        ]
+                    )
+                except Exception as e:
+                    print(f"OpenRouteService error: {e}")
 
             # Get forecast data from the complete request object
             forecast_data = get_request_forecast_data(instance)

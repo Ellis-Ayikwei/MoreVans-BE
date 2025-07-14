@@ -1,9 +1,10 @@
 from django.db import models, JSONField
 
+from apps.Basemodel.models import Basemodel
 from apps.User.models import User
 
 
-class InsuranceProfile(models.Model):
+class InsuranceProfile(Basemodel):
     COVERAGE_LEVELS = [
         ("basic", "Basic Coverage"),
         ("standard", "Standard Coverage"),

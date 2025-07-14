@@ -232,7 +232,7 @@ def get_upload_path(instance, filename):
     )
 
 
-class ProviderDocument(models.Model):
+class ProviderDocument(Basemodel):
     """Provider verification documents"""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -456,7 +456,7 @@ class WatchedJob(Basemodel):
         return f"{self.provider.email} watching job #{self.job.id}"
 
 
-class ServiceProviderThrough(models.Model):
+class ServiceProviderThrough(Basemodel):
     service = models.ForeignKey("Services.Services", on_delete=models.CASCADE)
     provider = models.ForeignKey("Provider.ServiceProvider", on_delete=models.CASCADE)
     # Add any additional fields if needed

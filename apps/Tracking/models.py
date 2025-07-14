@@ -1,7 +1,8 @@
 from django.db import models
+from apps.Basemodel.models import Basemodel
 
 
-class TrackingUpdate(models.Model):
+class TrackingUpdate(Basemodel):
     UPDATE_TYPES = [
         ("location", "Location Update"),
         ("status", "Status Update"),

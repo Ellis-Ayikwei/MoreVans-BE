@@ -6,7 +6,9 @@ from django.contrib.postgres.fields import JSONField
 from django.utils import timezone
 import uuid
 
-class TimeStampedModel(models.Model):
+from apps.Basemodel.models import Basemodel
+
+class TimeStampedModel(Basemodel):
     """Base model with created and updated timestamps"""
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -255,7 +257,7 @@ class MessageStatus(TimeStampedModel):
         return f"Message {self.message.id} is {self.status} by {self.user}"
 
 
-class TypingIndicator(models.Model):
+class TypingIndicator(Basemodel):
     """Model for tracking who's currently typing in a conversation"""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='typing_indicators')

@@ -1,7 +1,9 @@
 from django.db import models
 
+from apps.Basemodel.models import Basemodel
 
-class Dispute(models.Model):
+
+class Dispute(Basemodel):
     """Handle disputes and claims"""
 
     DISPUTE_TYPES = [

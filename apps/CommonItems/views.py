@@ -235,6 +235,7 @@ class CommonItemViewSet(viewsets.ModelViewSet):
 
         data = []
         for category in categories:
+            items = CommonItem.objects.filter(category=category)
             data.append(
                 {
                     "id": category.id,
@@ -242,6 +243,17 @@ class CommonItemViewSet(viewsets.ModelViewSet):
                     "item_count": category.item_count,
                     "icon": category.icon,
                     "color": category.color,
+                    "items": [
+                        {
+                            "id": item.id,
+                            "name": item.name,
+                            "dimensions": item.dimensions,
+                            "weight": item.weight,
+                            "needs_disassembly": item.needs_disassembly,
+                            "fragile": item.fragile,
+                        }
+                        for item in items
+                    ],
                 }
             )
 

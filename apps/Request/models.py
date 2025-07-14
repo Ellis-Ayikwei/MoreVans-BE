@@ -116,7 +116,6 @@ class Request(Basemodel):
     preferred_pickup_time_window = models.JSONField(
         null=True, blank=True
     )  # Store time window
-    estimated_completion_time = models.DateTimeField(null=True, blank=True)
     preferred_delivery_date = models.DateField(null=True, blank=True)
     preferred_delivery_time = models.CharField(
         max_length=10, choices=TIME_SLOT_CHOICES, null=True, blank=True
@@ -133,7 +132,7 @@ class Request(Basemodel):
     dimensions = models.JSONField(null=True, blank=True)  # Store length, width, height
     requires_special_handling = models.BooleanField(default=False)
     special_instructions = models.TextField(blank=True)
-    staff_required = models.IntegerField(default=0, null=True, blank=True)
+    staff_required = models.IntegerField(default=1, null=True, blank=True)
 
     # Moving items for non-journey requests
     moving_items = models.JSONField(
@@ -172,12 +171,17 @@ class Request(Basemodel):
     )
     route_optimization_data = models.JSONField(null=True, blank=True)
     weather_conditions = models.JSONField(null=True, blank=True)
-    estimated_fuel_consumption = models.DecimalField(
-        max_digits=6, decimal_places=2, null=True, blank=True
-    )
     carbon_footprint = models.DecimalField(
         max_digits=6, decimal_places=2, null=True, blank=True
     )
+
+    estimated_fuel_consumption = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True
+    )
+
+    estimated_completion_time = models.DateTimeField(null=True, blank=True)
+    estimated_duration = models.DurationField(null=True, blank=True)
+
     estimated_distance = models.DecimalField(
         max_digits=8, decimal_places=2, null=True, blank=True
     )
@@ -926,14 +930,14 @@ class MoveMilestone(Basemodel):
         return None
 
 
-class PickupSchedule(models.Model):
+class PickupSchedule(Basemodel):
     request = models.ForeignKey("Request", on_delete=models.CASCADE)
     location = models.ForeignKey("Location.Location", on_delete=models.CASCADE)
     # Add other fields needed for pickup scheduling
     objects: models.Manager = models.Manager()
 
 
-class DropoffSchedule(models.Model):
+class DropoffSchedule(Basemodel):
     request = models.ForeignKey("Request", on_delete=models.CASCADE)
     location = models.ForeignKey("Location.Location", on_delete=models.CASCADE)
     # Add other fields needed for dropoff scheduling

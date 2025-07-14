@@ -1,10 +1,11 @@
 from django.db import models
 
+from apps.Basemodel.models import Basemodel
 from apps.Bidding.models import Bid
 from apps.Request.models import Request
 
 
-class ContractAgreement(models.Model):
+class ContractAgreement(Basemodel):
     AGREEMENT_STATUS = [
         ("draft", "Draft"),
         ("pending", "Pending Signatures"),

@@ -114,6 +114,16 @@ class Command(BaseCommand):
                         "Yaris",
                         "CH-R",
                         "Venza",
+                        "Crown",
+                        "bZ4X",
+                        "GR86",
+                        "GR Corolla",
+                        "GR Supra",
+                        "Mirai",
+                        "Tundra Hybrid",
+                        "Sequoia Hybrid",
+                        "Grand Highlander",
+                        "Crown Signia",
                     ],
                 },
                 {
@@ -1229,6 +1239,188 @@ class Command(BaseCommand):
                 "name": "automotive",
                 "items": [
                     {
+                        "name": "Toyota Corolla",
+                        "brand": "Toyota",
+                        "model": "Corolla",
+                        "dimensions": {
+                            "length": 463,
+                            "width": 178,
+                            "height": 145,
+                            "unit": "cm",
+                        },
+                        "weight": 1300,
+                        "needs_disassembly": False,
+                        "fragile": True,
+                    },
+                    {
+                        "name": "Toyota Camry",
+                        "brand": "Toyota",
+                        "model": "Camry",
+                        "dimensions": {
+                            "length": 488,
+                            "width": 184,
+                            "height": 145,
+                            "unit": "cm",
+                        },
+                        "weight": 1550,
+                        "needs_disassembly": False,
+                        "fragile": True,
+                    },
+                    {
+                        "name": "Honda Civic",
+                        "brand": "Honda",
+                        "model": "Civic",
+                        "dimensions": {
+                            "length": 463,
+                            "width": 180,
+                            "height": 141,
+                            "unit": "cm",
+                        },
+                        "weight": 1270,
+                        "needs_disassembly": False,
+                        "fragile": True,
+                    },
+                    {
+                        "name": "Honda Accord",
+                        "brand": "Honda",
+                        "model": "Accord",
+                        "dimensions": {
+                            "length": 490,
+                            "width": 186,
+                            "height": 145,
+                            "unit": "cm",
+                        },
+                        "weight": 1500,
+                        "needs_disassembly": False,
+                        "fragile": True,
+                    },
+                    {
+                        "name": "Ford F-150",
+                        "brand": "Ford",
+                        "model": "F-150",
+                        "dimensions": {
+                            "length": 590,
+                            "width": 203,
+                            "height": 194,
+                            "unit": "cm",
+                        },
+                        "weight": 2000,
+                        "needs_disassembly": False,
+                        "fragile": True,
+                    },
+                    {
+                        "name": "Ford Mustang",
+                        "brand": "Ford",
+                        "model": "Mustang",
+                        "dimensions": {
+                            "length": 479,
+                            "width": 191,
+                            "height": 138,
+                            "unit": "cm",
+                        },
+                        "weight": 1600,
+                        "needs_disassembly": False,
+                        "fragile": True,
+                    },
+                    {
+                        "name": "Chevrolet Silverado",
+                        "brand": "Chevrolet",
+                        "model": "Silverado",
+                        "dimensions": {
+                            "length": 580,
+                            "width": 205,
+                            "height": 190,
+                            "unit": "cm",
+                        },
+                        "weight": 2100,
+                        "needs_disassembly": False,
+                        "fragile": True,
+                    },
+                    {
+                        "name": "Tesla Model 3",
+                        "brand": "Tesla",
+                        "model": "Model 3",
+                        "dimensions": {
+                            "length": 469,
+                            "width": 185,
+                            "height": 144,
+                            "unit": "cm",
+                        },
+                        "weight": 1750,
+                        "needs_disassembly": False,
+                        "fragile": True,
+                    },
+                    {
+                        "name": "Tesla Model S",
+                        "brand": "Tesla",
+                        "model": "Model S",
+                        "dimensions": {
+                            "length": 497,
+                            "width": 196,
+                            "height": 144,
+                            "unit": "cm",
+                        },
+                        "weight": 2000,
+                        "needs_disassembly": False,
+                        "fragile": True,
+                    },
+                    {
+                        "name": "BMW 3 Series",
+                        "brand": "BMW",
+                        "model": "3 Series",
+                        "dimensions": {
+                            "length": 471,
+                            "width": 182,
+                            "height": 144,
+                            "unit": "cm",
+                        },
+                        "weight": 1550,
+                        "needs_disassembly": False,
+                        "fragile": True,
+                    },
+                    {
+                        "name": "BMW X5",
+                        "brand": "BMW",
+                        "model": "X5",
+                        "dimensions": {
+                            "length": 492,
+                            "width": 200,
+                            "height": 174,
+                            "unit": "cm",
+                        },
+                        "weight": 2100,
+                        "needs_disassembly": False,
+                        "fragile": True,
+                    },
+                    {
+                        "name": "Mercedes-Benz C-Class",
+                        "brand": "Mercedes-Benz",
+                        "model": "C-Class",
+                        "dimensions": {
+                            "length": 475,
+                            "width": 182,
+                            "height": 144,
+                            "unit": "cm",
+                        },
+                        "weight": 1600,
+                        "needs_disassembly": False,
+                        "fragile": True,
+                    },
+                    {
+                        "name": "Porsche 911",
+                        "brand": "Porsche",
+                        "model": "911",
+                        "dimensions": {
+                            "length": 453,
+                            "width": 185,
+                            "height": 130,
+                            "unit": "cm",
+                        },
+                        "weight": 1500,
+                        "needs_disassembly": False,
+                        "fragile": True,
+                    },
+                    {
                         "name": "Car Parts (Engine)",
                         "dimensions": {
                             "length": 80,
@@ -1990,21 +2182,41 @@ class Command(BaseCommand):
                                 )
                             )
 
-                    # Create the generic item (without specific brand/model)
-                    item_type, created = CommonItem.objects.get_or_create(
-                        name=item_data["name"],
-                        category=category,
-                        brand=None,  # Generic item
-                        model=None,  # Generic item
-                        defaults={
-                            "dimensions": item_data.get("dimensions", {}),
-                            "weight": weight,
-                            "needs_disassembly": needs_disassembly,
-                            "fragile": fragile,
-                            "service_category": service_category_obj,
-                            "description": f"Generic {item_data['name']} for {display_name} category",
-                        },
-                    )
+                                    # Check if this item has specific brand and model
+                brand_obj = None
+                model_obj = None
+                
+                if "brand" in item_data and "model" in item_data:
+                    # Try to find the existing brand and model
+                    try:
+                        brand_obj = ItemBrand.objects.get(
+                            name=item_data["brand"],
+                            category=category
+                        )
+                        model_obj = ItemModel.objects.get(
+                            name=item_data["model"],
+                            brand=brand_obj
+                        )
+                    except (ItemBrand.DoesNotExist, ItemModel.DoesNotExist):
+                        # If brand/model doesn't exist, create as generic item
+                        brand_obj = None
+                        model_obj = None
+                
+                # Create the item with or without brand/model
+                item_type, created = CommonItem.objects.get_or_create(
+                    name=item_data["name"],
+                    category=category,
+                    brand=brand_obj,
+                    model=model_obj,
+                    defaults={
+                        "dimensions": item_data.get("dimensions", {}),
+                        "weight": weight,
+                        "needs_disassembly": needs_disassembly,
+                        "fragile": fragile,
+                        "service_category": service_category_obj,
+                        "description": f"{item_data.get('brand', 'Generic')} {item_data.get('model', item_data['name'])} for {display_name} category",
+                    },
+                )
                     if created:
                         items_created += 1
                         self.stdout.write(f"    Created item: {item_data['name']}")

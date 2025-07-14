@@ -93,6 +93,10 @@ class RequestSerializer(serializers.ModelSerializer):
     user_id = serializers.UUIDField(write_only=True, required=False)
     user = serializers.SerializerMethodField()
     messages = MessageSerializer(many=True, read_only=True)
+    estimated_distance = serializers.DecimalField(
+        max_digits=10, decimal_places=2, required=False, allow_null=True, read_only=True
+    )
+    estimated_duration = serializers.SerializerMethodField()
 
     class Meta:
         model = Request
@@ -115,6 +119,7 @@ class RequestSerializer(serializers.ModelSerializer):
             "preferred_delivery_time",
             "is_flexible",
             "estimated_completion_time",
+            "estimated_distance",
             "items_description",
             "total_weight",
             "dimensions",
@@ -135,6 +140,7 @@ class RequestSerializer(serializers.ModelSerializer):
             "cancellation_fee",
             "service_level",
             "estimated_distance",
+            "estimated_duration",
             "route_waypoints",
             "loading_time",
             "unloading_time",
@@ -166,6 +172,22 @@ class RequestSerializer(serializers.ModelSerializer):
     def get_all_locations(self, obj):
         """Return all locations associated with this request"""
         return obj.get_all_locations()
+
+    def get_estimated_duration(self, obj):
+        """Return estimated duration in human-readable format"""
+        if obj.estimated_duration:
+            total_seconds = int(obj.estimated_duration.total_seconds())
+            hours = total_seconds // 3600
+            minutes = (total_seconds % 3600) // 60
+            seconds = total_seconds % 60
+
+            if hours > 0:
+                return f"{hours}h {minutes}m {seconds}s"
+            elif minutes > 0:
+                return f"{minutes}m {seconds}s"
+            else:
+                return f"{seconds}s"
+        return None
 
     def validate(self, data):
         """
@@ -412,7 +434,7 @@ class RequestSerializer(serializers.ModelSerializer):
             has_elevator=stop_data.get("has_elevator", False),
             parking_info=stop_data.get("parking_info", ""),
             instructions=stop_data.get("instructions", ""),
-            scheduled_time=estimated_time,
+            scheduled_time=stop_data.get("scheduled_time"),
             property_type=stop_data.get("property_type", "house"),
             number_of_rooms=number_of_rooms,
             number_of_floors=number_of_floors,

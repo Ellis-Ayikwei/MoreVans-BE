@@ -99,6 +99,11 @@ class UserWithGroupsSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    groups = GroupSerializer(many=True, read_only=True)
+    user_permissions = serializers.SerializerMethodField(read_only=True)
+    roles = serializers.SerializerMethodField(read_only=True)
+    user_activities = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = User
         fields = (
@@ -113,8 +118,40 @@ class UserSerializer(serializers.ModelSerializer):
             "account_status",
             "last_active",
             "date_joined",
+            "groups",
+            "user_permissions",
+            "roles",
+            "user_activities",
         )
-        read_only_fields = ("rating", "last_active", "date_joined")
+        read_only_fields = (
+            "rating",
+            "last_active",
+            "date_joined",
+            "groups",
+            "user_permissions",
+            "roles",
+            "user_activities",
+        )
+
+    def get_roles(self, obj):
+        return [group.name for group in obj.groups.all()]
+
+    def get_user_permissions(self, obj):
+        # Get all effective permissions (direct + group)
+        perms = obj.get_user_permissions() | obj.get_group_permissions()
+        # Get Permission objects for all these codenames
+        from django.contrib.auth.models import Permission
+
+        permissions = Permission.objects.filter(
+            codename__in=[p.split(".")[-1] for p in perms]
+        )
+        return PermissionSerializer(permissions, many=True).data
+
+    def get_user_activities(self, obj):
+        from .serializer import UserActivitySerializer
+
+        activities = obj.activities.order_by("-created_at")[:10]
+        return UserActivitySerializer(activities, many=True).data
 
 
 class AddressSerializer(serializers.ModelSerializer):

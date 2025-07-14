@@ -14,64 +14,113 @@ from .models import (
     PropertyTypePricing,
     InsurancePricing,
     LoadingTimePricing,
+    ConfigDistanceFactor,
+    ConfigWeightFactor,
+    ConfigTimeFactor,
+    ConfigWeatherFactor,
+    ConfigVehicleFactor,
+    ConfigSpecialRequirementsFactor,
+    ConfigLocationFactor,
+    ConfigServiceLevelFactor,
+    ConfigStaffFactor,
+    ConfigPropertyTypeFactor,
+    ConfigInsuranceFactor,
+    ConfigLoadingTimeFactor,
 )
 
 
 class DistancePricingSerializer(serializers.ModelSerializer):
     # Explicitly define fields that should be numeric
     base_rate_per_km = serializers.DecimalField(
-        max_digits=10, decimal_places=2, coerce_to_string=False
+        max_digits=6, decimal_places=2, coerce_to_string=False
     )
     base_rate_per_mile = serializers.DecimalField(
-        max_digits=10, decimal_places=2, coerce_to_string=False
+        max_digits=6, decimal_places=2, coerce_to_string=False
     )
     additional_distance_multiplier = serializers.DecimalField(
-        max_digits=10, decimal_places=2, coerce_to_string=False
+        max_digits=3, decimal_places=2, coerce_to_string=False
     )
 
     class Meta:
         model = DistancePricing
-        fields = "__all__"
+        fields = [
+            "id",
+            "name",
+            "description",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "base_rate_per_km",
+            "min_distance",
+            "max_distance",
+            "base_rate_per_mile",
+            "additional_distance_threshold",
+            "additional_distance_multiplier",
+        ]
 
 
 class WeightPricingSerializer(serializers.ModelSerializer):
     # Convert numeric fields to proper format
     base_rate_per_kg = serializers.DecimalField(
-        max_digits=10, decimal_places=2, coerce_to_string=False
+        max_digits=6, decimal_places=2, coerce_to_string=False
     )
     base_rate_per_lb = serializers.DecimalField(
-        max_digits=10, decimal_places=2, coerce_to_string=False, required=False
+        max_digits=6, decimal_places=2, coerce_to_string=False, required=False
     )
     volume_to_weight_ratio = serializers.DecimalField(
-        max_digits=10, decimal_places=2, coerce_to_string=False, required=False
+        max_digits=6, decimal_places=2, coerce_to_string=False, required=False
     )
     heavy_item_threshold = serializers.IntegerField(required=False)
     heavy_item_surcharge = serializers.DecimalField(
-        max_digits=10, decimal_places=2, coerce_to_string=False, required=False
+        max_digits=6, decimal_places=2, coerce_to_string=False, required=False
     )
     min_weight = serializers.IntegerField()
     max_weight = serializers.IntegerField()
 
     class Meta:
         model = WeightPricing
-        fields = "__all__"
+        fields = [
+            "id",
+            "name",
+            "description",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "base_rate_per_kg",
+            "min_weight",
+            "max_weight",
+            "base_rate_per_lb",
+            "volume_to_weight_ratio",
+            "heavy_item_threshold",
+            "heavy_item_surcharge",
+        ]
 
 
 class TimePricingSerializer(serializers.ModelSerializer):
     # Convert numeric fields to proper format
     peak_hour_multiplier = serializers.DecimalField(
-        max_digits=5, decimal_places=2, coerce_to_string=False
+        max_digits=3, decimal_places=2, coerce_to_string=False
     )
     weekend_multiplier = serializers.DecimalField(
-        max_digits=5, decimal_places=2, coerce_to_string=False
+        max_digits=3, decimal_places=2, coerce_to_string=False
     )
     holiday_multiplier = serializers.DecimalField(
-        max_digits=5, decimal_places=2, coerce_to_string=False
+        max_digits=3, decimal_places=2, coerce_to_string=False
     )
 
     class Meta:
         model = TimePricing
-        fields = "__all__"
+        fields = [
+            "id",
+            "name",
+            "description",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "peak_hour_multiplier",
+            "weekend_multiplier",
+            "holiday_multiplier",
+        ]
 
 
 class WeatherPricingSerializer(serializers.ModelSerializer):
@@ -88,7 +137,17 @@ class WeatherPricingSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = WeatherPricing
-        fields = "__all__"
+        fields = [
+            "id",
+            "name",
+            "description",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "rain_multiplier",
+            "snow_multiplier",
+            "extreme_weather_multiplier",
+        ]
 
 
 class VehicleTypePricingSerializer(serializers.ModelSerializer):
@@ -117,7 +176,22 @@ class VehicleTypePricingSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = VehicleTypePricing
-        fields = "__all__"
+        fields = [
+            "id",
+            "name",
+            "description",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "vehicle_type",
+            "base_rate",
+            "capacity_multiplier",
+            "capacity_cubic_meters",
+            "capacity_weight_kg",
+            "fuel_efficiency_km_per_liter",
+            "hourly_rate",
+            "daily_rate",
+        ]
 
 
 class SpecialRequirementsPricingSerializer(serializers.ModelSerializer):
@@ -134,13 +208,34 @@ class SpecialRequirementsPricingSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SpecialRequirementsPricing
-        fields = "__all__"
+        fields = [
+            "id",
+            "name",
+            "description",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "fragile_items_multiplier",
+            "assembly_required_rate",
+            "special_equipment_rate",
+        ]
 
 
 class LocationPricingSerializer(serializers.ModelSerializer):
     class Meta:
         model = LocationPricing
-        fields = "__all__"
+        fields = [
+            "id",
+            "name",
+            "description",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "city_name",
+            "zone_multiplier",
+            "congestion_charge",
+            "parking_fee",
+        ]
 
 
 class PricingConfigurationSerializer(serializers.ModelSerializer):
@@ -198,55 +293,113 @@ class PricingConfigurationSerializer(serializers.ModelSerializer):
         }
 
         for factor_type, factor_ids in active_factors_data.items():
-            if factor_type in factor_models and factor_ids:
-                model_class, through_class = factor_models[factor_type]
+            if factor_type in factor_models:
+                factor_model, config_factor_model = factor_models[factor_type]
 
                 # Clear existing relationships for this factor type
-                through_class.objects.filter(configuration=config).delete()
+                config_factor_model.objects.filter(configuration=config).delete()
 
-                # Create new relationships with priority based on order
-                for priority, factor_id in enumerate(factor_ids):
+                # Create new relationships
+                for factor_id in factor_ids:
                     try:
-                        factor = model_class.objects.get(id=factor_id)
-                        through_class.objects.create(
-                            configuration=config,
-                            factor=factor,
-                            priority=priority + 1,  # Start from 1
-                            weight=1.0,  # Default weight
+                        factor_instance = factor_model.objects.get(id=factor_id)
+                        config_factor_model.objects.create(
+                            configuration=config, factor=factor_instance
                         )
-                    except model_class.DoesNotExist:
-                        # Log error or handle invalid factor ID
-                        pass
+                    except factor_model.DoesNotExist:
+                        pass  # Skip if factor doesn't exist
 
 
 class ServiceLevelPricingSerializer(serializers.ModelSerializer):
     class Meta:
         model = ServiceLevelPricing
-        fields = "__all__"
+        fields = [
+            "id",
+            "name",
+            "description",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "service_level",
+            "price_multiplier",
+        ]
 
 
 class StaffRequiredPricingSerializer(serializers.ModelSerializer):
     class Meta:
         model = StaffRequiredPricing
-        fields = "__all__"
+        fields = [
+            "id",
+            "name",
+            "description",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "base_rate_per_staff",
+            "min_staff",
+            "max_staff",
+            "hourly_rate",
+            "overtime_rate_multiplier",
+            "specialist_staff_multiplier",
+        ]
 
 
 class PropertyTypePricingSerializer(serializers.ModelSerializer):
     class Meta:
         model = PropertyTypePricing
-        fields = "__all__"
+        fields = [
+            "id",
+            "name",
+            "description",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "property_type",
+            "base_rate",
+            "rate_per_room",
+            "elevator_discount",
+            "floor_rate",
+            "narrow_access_fee",
+            "stairs_per_flight_fee",
+            "rate_per_sq_meter",
+            "long_carry_distance_fee",
+        ]
 
 
 class InsurancePricingSerializer(serializers.ModelSerializer):
     class Meta:
         model = InsurancePricing
-        fields = "__all__"
+        fields = [
+            "id",
+            "name",
+            "description",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "base_rate",
+            "value_percentage",
+            "min_premium",
+            "premium_coverage_multiplier",
+            "high_value_item_threshold",
+            "high_value_item_rate",
+            "deductible_amount",
+        ]
 
 
 class LoadingTimePricingSerializer(serializers.ModelSerializer):
     class Meta:
         model = LoadingTimePricing
-        fields = "__all__"
+        fields = [
+            "id",
+            "name",
+            "description",
+            "is_active",
+            "created_at",
+            "updated_at",
+            "base_rate_per_hour",
+            "min_hours",
+            "overtime_multiplier",
+        ]
 
 
 class PriceCalculationSerializer(serializers.Serializer):
@@ -280,6 +433,13 @@ class PriceCalculationSerializer(serializers.Serializer):
     weather_condition = serializers.ChoiceField(
         choices=["normal", "rain", "snow", "extreme"], required=False, default="normal"
     )
+    traffic_multiplier = serializers.FloatField(required=False, default=1.0)
+    vehicle_type = serializers.CharField(required=False)
+    request_id = serializers.UUIDField(required=True)
+
+    def validate(self, data):
+        # Add any custom validation logic here
+        return data
 
 
 class DateBasedPriceCalculationSerializer(serializers.Serializer):
@@ -313,19 +473,9 @@ class DateBasedPriceCalculationSerializer(serializers.Serializer):
 
     def validate(self, data):
         # Check if both dates are present before comparing
-        start_date = data.get("start_date")
-        end_date = data.get("end_date")
-
-        if start_date is None:
-            raise serializers.ValidationError("Start date is required")
-
-        if end_date is None:
-            raise serializers.ValidationError("End date is required")
-
-        if start_date > end_date:
-            raise serializers.ValidationError("End date must be after start date")
-
-        if (end_date - start_date).days > 90:
-            raise serializers.ValidationError("Date range cannot exceed 90 days")
-
+        if "start_date" in data and "end_date" in data:
+            if data["start_date"] > data["end_date"]:
+                raise serializers.ValidationError(
+                    "Start date cannot be after end date."
+                )
         return data

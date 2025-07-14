@@ -7,10 +7,12 @@ from django.utils import timezone  # Importing timezone utilities from Django
 from rest_framework.views import APIView  # Importing APIView from DRF
 from rest_framework.response import Response  # Importing Response from DRF
 from rest_framework import permissions  # Importing permissions from DRF
-from rest_framework.decorators import action  # Importing action decorator from DRF
+from rest_framework.decorators import action
+
+from apps.Basemodel.models import Basemodel
 
 
-class PricingFactor(models.Model):  # Defining abstract base class for pricing factors
+class PricingFactor(Basemodel):  # Defining abstract base class for pricing factors
     """Base model for pricing factors that can be enabled/disabled by admin"""
 
     name = models.CharField(max_length=100)  # Name of the pricing factor
@@ -18,9 +20,6 @@ class PricingFactor(models.Model):  # Defining abstract base class for pricing f
     is_active = models.BooleanField(
         default=True
     )  # Whether the pricing factor is active
-    created_at = models.DateTimeField(auto_now_add=True)  # Timestamp of creation
-    updated_at = models.DateTimeField(auto_now=True)  # Timestamp of last update
-    objects: models.Manager = models.Manager()
 
     class Meta:  # Meta class for additional options
         abstract = True  # Marks this model as abstract
@@ -51,6 +50,9 @@ class DistancePricing(PricingFactor):  # Model for distance-based pricing
         validators=[MinValueValidator(1.00)],
         help_text="Multiplier for distances beyond the threshold",
     )
+
+    class Meta:
+        db_table = "pricing_distance"
 
     def calculate_price(
         self, distance_km
@@ -94,6 +96,9 @@ class WeightPricing(PricingFactor):  # Model for weight-based pricing
         validators=[MinValueValidator(0.00)],
     )
 
+    class Meta:
+        db_table = "pricing_weight"
+
     def calculate_price(self, weight_kg):  # Method to calculate price based on weight
         if not self.is_active:  # If pricing factor is inactive
             return 0  # Return price as 0
@@ -115,6 +120,9 @@ class TimePricing(PricingFactor):  # Model for time-based pricing
         max_digits=3, decimal_places=2, default=2.0, validators=[MinValueValidator(1.0)]
     )
 
+    class Meta:
+        db_table = "pricing_time"
+
 
 class WeatherPricing(PricingFactor):  # Model for weather-based pricing
     """Pricing adjustments based on weather conditions"""
@@ -128,6 +136,9 @@ class WeatherPricing(PricingFactor):  # Model for weather-based pricing
     extreme_weather_multiplier = models.DecimalField(  # Multiplier for extreme weather
         max_digits=3, decimal_places=2, default=2.0, validators=[MinValueValidator(1.0)]
     )
+
+    class Meta:
+        db_table = "pricing_weather"
 
 
 class VehicleTypePricing(PricingFactor):  # Model for vehicle type-based pricing
@@ -171,6 +182,9 @@ class VehicleTypePricing(PricingFactor):  # Model for vehicle type-based pricing
         validators=[MinValueValidator(0.00)],
     )
 
+    class Meta:
+        db_table = "pricing_vehicle_type"
+
 
 class SpecialRequirementsPricing(
     PricingFactor
@@ -192,6 +206,9 @@ class SpecialRequirementsPricing(
         default=75.00,
         validators=[MinValueValidator(0.01)],
     )
+
+    class Meta:
+        db_table = "pricing_special_requirements"
 
 
 class LocationPricing(PricingFactor):  # Model for location-based pricing
@@ -217,6 +234,9 @@ class LocationPricing(PricingFactor):  # Model for location-based pricing
         validators=[MinValueValidator(0.00)],
     )
 
+    class Meta:
+        db_table = "pricing_location"
+
 
 class ServiceLevelPricing(PricingFactor):  # Model for service level-based pricing
     """Pricing based on service level (standard, express, same_day, scheduled)"""
@@ -233,6 +253,9 @@ class ServiceLevelPricing(PricingFactor):  # Model for service level-based prici
     price_multiplier = models.DecimalField(  # Multiplier for service level
         max_digits=3, decimal_places=2, default=1.0, validators=[MinValueValidator(0.5)]
     )
+
+    class Meta:
+        db_table = "pricing_service_level"
 
 
 class StaffRequiredPricing(PricingFactor):  # Model for staff-based pricing
@@ -259,6 +282,9 @@ class StaffRequiredPricing(PricingFactor):  # Model for staff-based pricing
         validators=[MinValueValidator(1.0)],
         help_text="Multiplier for specialized staff (piano movers, art handlers, etc.)",
     )
+
+    class Meta:
+        db_table = "pricing_staff_required"
 
 
 class PropertyTypePricing(PricingFactor):  # Model for property type-based pricing
@@ -318,6 +344,9 @@ class PropertyTypePricing(PricingFactor):  # Model for property type-based prici
         help_text="Fee for carrying items long distances from parking",
     )
 
+    class Meta:
+        db_table = "pricing_property_type"
+
 
 class InsurancePricing(PricingFactor):  # Model for insurance-based pricing
     """Pricing for insurance coverage"""
@@ -362,6 +391,9 @@ class InsurancePricing(PricingFactor):  # Model for insurance-based pricing
         validators=[MinValueValidator(0.00)],
     )
 
+    class Meta:
+        db_table = "pricing_insurance"
+
 
 class LoadingTimePricing(PricingFactor):  # Model for loading time-based pricing
     """Pricing based on loading/unloading time"""
@@ -382,11 +414,14 @@ class LoadingTimePricing(PricingFactor):  # Model for loading time-based pricing
         validators=[MinValueValidator(1.00)],
     )
 
+    class Meta:
+        db_table = "pricing_loading_time"
+
 
 # Config Factors
 
 
-class ConfigFactorBase(models.Model):
+class ConfigFactorBase(Basemodel):
     """Base model for configuration-factor relationships"""
 
     priority = models.PositiveIntegerField(default=1)
@@ -413,6 +448,7 @@ class ConfigDistanceFactor(ConfigFactorBase):
 
     class Meta(ConfigFactorBase.Meta):
         unique_together = ["configuration", "factor"]
+        db_table = "pricing_config_distance_factor"
 
 
 class ConfigWeightFactor(ConfigFactorBase):
@@ -423,6 +459,7 @@ class ConfigWeightFactor(ConfigFactorBase):
 
     class Meta(ConfigFactorBase.Meta):
         unique_together = ["configuration", "factor"]
+        db_table = "pricing_config_weight_factor"
 
 
 class ConfigTimeFactor(ConfigFactorBase):
@@ -433,6 +470,7 @@ class ConfigTimeFactor(ConfigFactorBase):
 
     class Meta(ConfigFactorBase.Meta):
         unique_together = ["configuration", "factor"]
+        db_table = "pricing_config_time_factor"
 
 
 class ConfigWeatherFactor(ConfigFactorBase):
@@ -443,6 +481,7 @@ class ConfigWeatherFactor(ConfigFactorBase):
 
     class Meta(ConfigFactorBase.Meta):
         unique_together = ["configuration", "factor"]
+        db_table = "pricing_config_weather_factor"
 
 
 class ConfigVehicleFactor(ConfigFactorBase):
@@ -453,6 +492,7 @@ class ConfigVehicleFactor(ConfigFactorBase):
 
     class Meta(ConfigFactorBase.Meta):
         unique_together = ["configuration", "factor"]
+        db_table = "pricing_config_vehicle_factor"
 
 
 class ConfigSpecialRequirementsFactor(ConfigFactorBase):
@@ -463,6 +503,7 @@ class ConfigSpecialRequirementsFactor(ConfigFactorBase):
 
     class Meta(ConfigFactorBase.Meta):
         unique_together = ["configuration", "factor"]
+        db_table = "pricing_config_special_requirements_factor"
 
 
 class ConfigLocationFactor(ConfigFactorBase):
@@ -473,6 +514,7 @@ class ConfigLocationFactor(ConfigFactorBase):
 
     class Meta(ConfigFactorBase.Meta):
         unique_together = ["configuration", "factor"]
+        db_table = "pricing_config_location_factor"
 
 
 class ConfigServiceLevelFactor(ConfigFactorBase):
@@ -483,6 +525,7 @@ class ConfigServiceLevelFactor(ConfigFactorBase):
 
     class Meta(ConfigFactorBase.Meta):
         unique_together = ["configuration", "factor"]
+        db_table = "pricing_config_service_level_factor"
 
 
 class ConfigStaffFactor(ConfigFactorBase):
@@ -493,6 +536,7 @@ class ConfigStaffFactor(ConfigFactorBase):
 
     class Meta(ConfigFactorBase.Meta):
         unique_together = ["configuration", "factor"]
+        db_table = "pricing_config_staff_factor"
 
 
 class ConfigPropertyTypeFactor(ConfigFactorBase):
@@ -503,6 +547,7 @@ class ConfigPropertyTypeFactor(ConfigFactorBase):
 
     class Meta(ConfigFactorBase.Meta):
         unique_together = ["configuration", "factor"]
+        db_table = "pricing_config_property_type_factor"
 
 
 class ConfigInsuranceFactor(ConfigFactorBase):
@@ -513,6 +558,7 @@ class ConfigInsuranceFactor(ConfigFactorBase):
 
     class Meta(ConfigFactorBase.Meta):
         unique_together = ["configuration", "factor"]
+        db_table = "pricing_config_insurance_factor"
 
 
 class ConfigLoadingTimeFactor(ConfigFactorBase):
@@ -523,9 +569,10 @@ class ConfigLoadingTimeFactor(ConfigFactorBase):
 
     class Meta(ConfigFactorBase.Meta):
         unique_together = ["configuration", "factor"]
+        db_table = "pricing_config_loading_time_factor"
 
 
-class PricingConfiguration(models.Model):
+class PricingConfiguration(Basemodel):
     """Master configuration for the pricing system"""
 
     name = models.CharField(max_length=100)
@@ -646,6 +693,8 @@ class PricingConfiguration(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        managed = True
+        db_table = "pricing_configuration"
 
     def __str__(self):
         return f"{self.name} ({'Active' if self.is_active else 'Inactive'})"
