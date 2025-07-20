@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import (
     ItemCategory,
+    ItemType,
     ItemBrand,
     ItemModel,
     CommonItem,
@@ -28,6 +29,32 @@ class ItemCategorySerializer(serializers.ModelSerializer):
             "image",
             "color",
             "tab_color",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+
+class ItemTypeSerializer(serializers.ModelSerializer):
+    """Serializer for ItemType model"""
+
+    category = ItemCategorySerializer(read_only=True)
+    category_id = serializers.UUIDField(write_only=True)
+
+    class Meta:
+        model = ItemType
+        fields = [
+            "id",
+            "name",
+            "category",
+            "category_id",
+            "description",
+            "icon",
+            "image",
+            "color",
+            "tab_color",
+            "priority",
+            "is_active",
             "created_at",
             "updated_at",
         ]
@@ -168,14 +195,22 @@ class CommonItemListSerializer(serializers.ModelSerializer):
     """Simplified serializer for CommonItem list view"""
 
     category = serializers.CharField(source="category.name")
-    brand = serializers.CharField(source="brand.name")
-    model = serializers.CharField(source="model.name")
+    brand = serializers.SerializerMethodField()
+    model = serializers.SerializerMethodField()
     weight = serializers.CharField(source="get_weight_display", read_only=True)
     dimensions = serializers.CharField(source="get_dimensions_display", read_only=True)
     fragile = serializers.CharField(source="get_fragile_display", read_only=True)
     disassembly = serializers.CharField(
         source="get_disassembly_display", read_only=True
     )
+
+    def get_brand(self, obj):
+        """Get brand name, handling None values"""
+        return obj.brand.name if obj.brand else ""
+
+    def get_model(self, obj):
+        """Get model name, handling None values"""
+        return obj.model.name if obj.model else ""
 
     class Meta:
         model = CommonItem
@@ -201,6 +236,16 @@ class CategoryForDropdownSerializer(serializers.ModelSerializer):
     class Meta:
         model = ItemCategory
         fields = ["id", "name"]
+
+
+class TypeForDropdownSerializer(serializers.ModelSerializer):
+    """Simplified serializer for type dropdown"""
+
+    category = CategoryForDropdownSerializer(read_only=True)
+
+    class Meta:
+        model = ItemType
+        fields = ["id", "name", "category"]
 
 
 class BrandForDropdownSerializer(serializers.ModelSerializer):

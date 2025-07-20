@@ -6,6 +6,7 @@ from rest_framework.decorators import action
 from rest_framework.filters import SearchFilter, OrderingFilter
 from .models import (
     ItemCategory,
+    ItemType,
     ItemBrand,
     ItemModel,
     CommonItem,
@@ -15,6 +16,7 @@ from .models import (
 )
 from .serializers import (
     ItemCategorySerializer,
+    ItemTypeSerializer,
     ItemBrandSerializer,
     ItemModelSerializer,
     CommonItemSerializer,
@@ -22,6 +24,7 @@ from .serializers import (
     ItemBrandWithModelsSerializer,
     CommonItemListSerializer,
     CategoryForDropdownSerializer,
+    TypeForDropdownSerializer,
     BrandForDropdownSerializer,
     ModelForDropdownSerializer,
     VehicleTypeSerializer,
@@ -74,6 +77,33 @@ class ItemCategoryViewSet(viewsets.ModelViewSet):
         """Get categories for dropdown"""
         categories = self.get_queryset()
         serializer = CategoryForDropdownSerializer(categories, many=True)
+        return Response(serializer.data)
+
+
+class ItemTypeViewSet(viewsets.ModelViewSet):
+    """ViewSet for ItemType model"""
+
+    queryset = ItemType.objects.select_related("category").all()
+    serializer_class = ItemTypeSerializer
+    filter_backends = [SearchFilter, OrderingFilter]
+    search_fields = ["name", "description", "category__name"]
+    ordering_fields = ["name", "category__name", "priority", "created_at", "updated_at"]
+    ordering = ["category__name", "priority", "name"]
+    permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        """Filter by category if provided"""
+        queryset = super().get_queryset()
+        category_id = self.request.query_params.get("category_id", None)
+        if category_id is not None:
+            queryset = queryset.filter(category_id=category_id)
+        return queryset
+
+    @action(detail=False, methods=["get"])
+    def dropdown(self, request):
+        """Get item types for dropdown"""
+        item_types = self.get_queryset()
+        serializer = TypeForDropdownSerializer(item_types, many=True)
         return Response(serializer.data)
 
 
@@ -251,6 +281,7 @@ class CommonItemViewSet(viewsets.ModelViewSet):
                             "weight": item.weight,
                             "needs_disassembly": item.needs_disassembly,
                             "fragile": item.fragile,
+                            "type": item.type.name if item.type else None,
                         }
                         for item in items
                     ],

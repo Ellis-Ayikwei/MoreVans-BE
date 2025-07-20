@@ -31,6 +31,41 @@ class ItemCategory(Basemodel):
         ordering = ["name"]
 
 
+class ItemType(Basemodel):
+    """Types of items within categories (e.g., cars, motorcycles, boats under automotive)"""
+
+    name = models.CharField(max_length=100)
+    category = models.ForeignKey(
+        ItemCategory,
+        on_delete=models.CASCADE,
+        related_name="types",
+        help_text="Category this type belongs to",
+    )
+    description = models.TextField(blank=True)
+    # Visual properties for frontend
+    icon = models.CharField(
+        max_length=100, blank=True, help_text="FontAwesome icon name"
+    )
+    image = models.URLField(blank=True, help_text="URL to type image")
+    color = models.CharField(max_length=255, blank=True, help_text="Hex color code")
+    tab_color = models.CharField(max_length=255, blank=True, help_text="Hex color code")
+    priority = models.IntegerField(default=0, help_text="Display priority order")
+    is_active = models.BooleanField(
+        default=True, help_text="Type is active and available"
+    )
+
+    def __str__(self):
+        return f"{self.name} ({self.category.name})"
+
+    class Meta:
+        db_table = "item_type"
+        managed = True
+        verbose_name = "Item Type"
+        verbose_name_plural = "Item Types"
+        ordering = ["category__name", "priority", "name"]
+        unique_together = ["name", "category"]
+
+
 class ItemBrand(Basemodel):
     """Brands of items that can be transported"""
 
@@ -40,6 +75,14 @@ class ItemBrand(Basemodel):
         on_delete=models.CASCADE,
         related_name="brands",
         help_text="Category this brand belongs to",
+    )
+    type = models.ForeignKey(
+        ItemType,
+        on_delete=models.CASCADE,
+        related_name="brands",
+        help_text="Type this brand belongs to",
+        null=True,
+        blank=True,
     )
     description = models.TextField(blank=True)
     # Visual properties for frontend
@@ -58,8 +101,8 @@ class ItemBrand(Basemodel):
         managed = True
         verbose_name = "Item Brand"
         verbose_name_plural = "Item Brands"
-        ordering = ["category__name", "name"]
-        unique_together = ["name", "category"]
+        ordering = ["category__name", "type__name", "name"]
+        unique_together = ["name", "category", "type"]
 
 
 class ItemModel(Basemodel):
@@ -102,6 +145,14 @@ class CommonItem(Basemodel):
         on_delete=models.CASCADE,
         related_name="items",
         help_text="Category this item belongs to",
+    )
+    type = models.ForeignKey(
+        ItemType,
+        on_delete=models.CASCADE,
+        related_name="items",
+        help_text="Type this item belongs to",
+        null=True,
+        blank=True,
     )
     brand = models.ForeignKey(
         ItemBrand,
@@ -167,25 +218,41 @@ class CommonItem(Basemodel):
     )
 
     def __str__(self):
-        return f"{self.name} ({self.brand.name} {self.model.name})"
+        brand_name = self.brand.name if self.brand else ""
+        model_name = self.model.name if self.model else ""
+        return f"{self.name} ({brand_name} {model_name})"
 
     class Meta:
         db_table = "common_item"
         managed = True
         verbose_name = "Common Item"
         verbose_name_plural = "Common Items"
-        ordering = ["category__name", "brand__name", "model__name", "name"]
-        unique_together = ["name", "category", "brand", "model"]
+        ordering = [
+            "category__name",
+            "type__name",
+            "brand__name",
+            "model__name",
+            "name",
+        ]
+        unique_together = ["name", "category", "type", "brand", "model"]
 
     @property
     def full_name(self):
-        """Returns the full name including brand and model"""
-        return f"{self.name} ({self.brand.name} {self.model.name})"
+        """Returns the full name including type, brand and model"""
+        type_name = self.type.name if self.type else ""
+        brand_name = self.brand.name if self.brand else ""
+        model_name = self.model.name if self.model else ""
+        return f"{self.name} ({type_name} {brand_name} {model_name})"
 
     @property
     def category_name(self):
         """Returns the category name"""
         return self.category.name if self.category else ""
+
+    @property
+    def type_name(self):
+        """Returns the type name"""
+        return self.type.name if self.type else ""
 
     @property
     def brand_name(self):

@@ -2,6 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     ItemCategoryViewSet,
+    ItemTypeViewSet,
     ItemBrandViewSet,
     ItemModelViewSet,
     CommonItemViewSet,
@@ -12,6 +13,7 @@ from .views import (
 
 router = DefaultRouter()
 router.register(r"item-categories", ItemCategoryViewSet)
+router.register(r"item-types", ItemTypeViewSet)
 router.register(r"item-brands", ItemBrandViewSet)
 router.register(r"item-models", ItemModelViewSet)
 router.register(r"common-items", CommonItemViewSet)

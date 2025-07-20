@@ -197,401 +197,113 @@ class Command(BaseCommand):
                     self.stdout.write(f"    * {service.name}")
 
     def _get_categories_data(self):
-        """Return the service categories data"""
+        """Return the updated service categories data"""
         return [
             {
-                "name": "House Removals",
-                "description": "Complete home relocations with professional moving teams. From small apartments to large family homes.",
+                "name": "Removals & Storage",
+                "description": "Complete removal and storage services including home, office, student, and international relocations with secure storage solutions.",
                 "icon": "IconHome2",
             },
             {
-                "name": "Man and Van Services",
-                "description": "Affordable moving services for smaller loads, single items, or when you need an extra pair of hands.",
+                "name": "Man & Van Services",
+                "description": "Affordable delivery and moving services for furniture, appliances, pianos, parcels, and specialized items.",
                 "icon": "IconTruck",
             },
             {
-                "name": "Office Relocations",
-                "description": "Business and commercial moving services including office furniture, equipment, and document handling.",
+                "name": "Vehicle Delivery",
+                "description": "Safe and reliable car and motorcycle transport services across the country and internationally.",
+                "icon": "IconCar",
+            },
+        ]
+
+    def _get_services_data(self):
+        """Return the updated services data with their associated categories"""
+        return [
+            # Removals & Storage
+            {
+                "name": "Home Removals",
+                "description": "Complete home relocations with professional moving teams.",
+                "category": "Removals & Storage",
+                "icon": "IconHome2",
+            },
+            {
+                "name": "International Removals",
+                "description": "Cross-border and international moving services with customs handling.",
+                "category": "Removals & Storage",
+                "icon": "IconWorld",
+            },
+            {
+                "name": "Office Removals",
+                "description": "Business and commercial moving services including office furniture and equipment.",
+                "category": "Removals & Storage",
                 "icon": "IconBuilding",
             },
             {
                 "name": "Student Removals",
                 "description": "Specialized moving services for university students, including dormitory and shared accommodation moves.",
+                "category": "Removals & Storage",
                 "icon": "IconSchool",
-            },
-            {
-                "name": "Vehicle Transport",
-                "description": "Safe and reliable car, motorcycle, and vehicle delivery services across the country and internationally.",
-                "icon": "IconCar",
-            },
-            {
-                "name": "Furniture Delivery",
-                "description": "Single item and furniture courier services for purchases, sales, or individual piece relocations.",
-                "icon": "IconSofa",
-            },
-            {
-                "name": "Piano Moving",
-                "description": "Specialist piano transport services with expert handling for upright, grand, and digital pianos.",
-                "icon": "IconMusic",
             },
             {
                 "name": "Storage Services",
                 "description": "Secure storage solutions with collection and delivery services for short-term or long-term needs.",
+                "category": "Removals & Storage",
                 "icon": "IconBox",
             },
+            # Man & Van Services
             {
-                "name": "International Moving",
-                "description": "Cross-border removals and European transportation services with customs handling.",
-                "icon": "IconWorld",
-            },
-            {
-                "name": "Courier & Delivery",
-                "description": "Same-day and next-day courier services for parcels, documents, and urgent deliveries.",
-                "icon": "IconPackage",
-            },
-            {
-                "name": "Large Item Delivery",
-                "description": "Specialized transport for oversized items, appliances, and bulky goods that won't fit in regular vehicles.",
-                "icon": "IconArrowsMaximize",
-            },
-            {
-                "name": "Business Logistics",
-                "description": "B2B and B2B2C delivery solutions for retailers, e-commerce, and commercial operations.",
-                "icon": "IconBriefcase",
-            },
-            {
-                "name": "Fragile Item Moving",
-                "description": "Expert handling and transport of delicate items including artwork, antiques, and valuable possessions.",
-                "icon": "IconGlass",
-            },
-            {
-                "name": "Emergency Moving",
-                "description": "Last-minute and urgent moving services for time-sensitive relocations and deliveries.",
-                "icon": "IconClock",
-            },
-            {
-                "name": "Packing Services",
-                "description": "Professional packing and unpacking services with quality materials and expert techniques.",
-                "icon": "IconPackageImport",
-            },
-            {
-                "name": "Assembly Services",
-                "description": "Furniture assembly and disassembly services for complex items and flat-pack furniture.",
-                "icon": "IconTool",
-            },
-            {
-                "name": "Waste Removal",
-                "description": "House clearance and waste disposal services for unwanted items during moves.",
-                "icon": "IconTrash",
-            },
-            {
-                "name": "Pet Transport",
-                "description": "Safe and comfortable transportation services for pets during relocations.",
-                "icon": "IconDog",
-            },
-        ]
-
-    def _get_services_data(self):
-        """Return the services data with their associated categories"""
-        return [
-            # House Removals Services
-            {
-                "name": "Complete Home Removal",
-                "description": "Full-service home relocation including packing, moving, and unpacking.",
-                "category": "House Removals",
-                "icon": "IconHome2",
-            },
-            {
-                "name": "Apartment Moving",
-                "description": "Specialized moving services for apartment and flat relocations.",
-                "category": "House Removals",
-                "icon": "IconHome2",
-            },
-            {
-                "name": "Furniture Moving",
-                "description": "Professional furniture moving and placement services.",
-                "category": "House Removals",
+                "name": "Furniture & Appliance Delivery",
+                "description": "Delivery and moving services for furniture and appliances.",
+                "category": "Man & Van Services",
                 "icon": "IconSofa",
             },
-            # Man and Van Services
             {
-                "name": "Single Item Delivery",
-                "description": "Quick and affordable delivery for individual items and small loads.",
-                "category": "Man and Van Services",
-                "icon": "IconTruck",
-            },
-            {
-                "name": "Small Load Moving",
-                "description": "Efficient moving services for small apartments and studio moves.",
-                "category": "Man and Van Services",
-                "icon": "IconTruck",
-            },
-            {
-                "name": "Same Day Moving",
-                "description": "Urgent same-day moving services for time-sensitive relocations.",
-                "category": "Man and Van Services",
-                "icon": "IconClock",
-            },
-            # Office Relocations
-            {
-                "name": "Office Furniture Moving",
-                "description": "Professional moving of office furniture, desks, and equipment.",
-                "category": "Office Relocations",
-                "icon": "IconBuilding",
-            },
-            {
-                "name": "Commercial Equipment Transport",
-                "description": "Safe transport of commercial equipment and machinery.",
-                "category": "Office Relocations",
-                "icon": "IconBuilding",
-            },
-            {
-                "name": "Document and File Moving",
-                "description": "Secure handling and transport of important documents and files.",
-                "category": "Office Relocations",
-                "icon": "IconFile",
-            },
-            # Student Removals
-            {
-                "name": "Student Dorm Moving",
-                "description": "Specialized moving services for university dormitory relocations.",
-                "category": "Student Removals",
-                "icon": "IconSchool",
-            },
-            {
-                "name": "Student Storage",
-                "description": "Secure storage solutions for students during holidays and breaks.",
-                "category": "Student Removals",
-                "icon": "IconBox",
-            },
-            # Vehicle Transport
-            {
-                "name": "Car Transport",
-                "description": "Safe and reliable car delivery services across the country.",
-                "category": "Vehicle Transport",
-                "icon": "IconCar",
-            },
-            {
-                "name": "Motorcycle Transport",
-                "description": "Specialized motorcycle transport with proper securing.",
-                "category": "Vehicle Transport",
-                "icon": "IconMotorbike",
-            },
-            {
-                "name": "Boat Transport",
-                "description": "Professional boat and watercraft transport services.",
-                "category": "Vehicle Transport",
-                "icon": "IconShip",
-            },
-            # Furniture Delivery
-            {
-                "name": "Furniture Assembly",
-                "description": "Professional furniture assembly and installation services.",
-                "category": "Furniture Delivery",
-                "icon": "IconTool",
-            },
-            {
-                "name": "Furniture Disassembly",
-                "description": "Safe disassembly of furniture for moving and transport.",
-                "category": "Furniture Delivery",
-                "icon": "IconTool",
-            },
-            {
-                "name": "Furniture Collection",
-                "description": "Collection and delivery of purchased furniture items.",
-                "category": "Furniture Delivery",
-                "icon": "IconSofa",
-            },
-            # Piano Moving
-            {
-                "name": "Grand Piano Moving",
-                "description": "Expert handling and transport of grand pianos.",
-                "category": "Piano Moving",
+                "name": "Piano Delivery",
+                "description": "Specialist piano transport services with expert handling.",
+                "category": "Man & Van Services",
                 "icon": "IconMusic",
             },
             {
-                "name": "Upright Piano Moving",
-                "description": "Professional moving services for upright pianos.",
-                "category": "Piano Moving",
-                "icon": "IconMusic",
-            },
-            {
-                "name": "Digital Piano Transport",
-                "description": "Safe transport of digital pianos and keyboards.",
-                "category": "Piano Moving",
-                "icon": "IconMusic",
-            },
-            # Storage Services
-            {
-                "name": "Short-term Storage",
-                "description": "Flexible storage solutions for temporary needs.",
-                "category": "Storage Services",
-                "icon": "IconBox",
-            },
-            {
-                "name": "Long-term Storage",
-                "description": "Secure long-term storage with regular maintenance.",
-                "category": "Storage Services",
-                "icon": "IconBox",
-            },
-            {
-                "name": "Climate-controlled Storage",
-                "description": "Temperature and humidity controlled storage for sensitive items.",
-                "category": "Storage Services",
-                "icon": "IconBox",
-            },
-            # International Moving
-            {
-                "name": "European Moving",
-                "description": "Cross-border moving services within Europe.",
-                "category": "International Moving",
-                "icon": "IconWorld",
-            },
-            {
-                "name": "International Shipping",
-                "description": "Global shipping and moving services with customs handling.",
-                "category": "International Moving",
-                "icon": "IconWorld",
-            },
-            # Courier & Delivery
-            {
-                "name": "Same Day Delivery",
-                "description": "Express same-day delivery services for urgent items.",
-                "category": "Courier & Delivery",
-                "icon": "IconPackage",
-            },
-            {
-                "name": "Next Day Delivery",
-                "description": "Reliable next-day delivery for parcels and documents.",
-                "category": "Courier & Delivery",
+                "name": "Parcel Delivery",
+                "description": "Same-day and next-day parcel delivery services.",
+                "category": "Man & Van Services",
                 "icon": "IconPackage",
             },
             {
                 "name": "eBay Delivery",
                 "description": "Specialized delivery services for eBay purchases and sales.",
-                "category": "Courier & Delivery",
+                "category": "Man & Van Services",
                 "icon": "IconPackageImport",
             },
             {
                 "name": "Gumtree Delivery",
                 "description": "Delivery services for Gumtree purchases and sales.",
-                "category": "Courier & Delivery",
+                "category": "Man & Van Services",
                 "icon": "IconPackageImport",
             },
-            # Large Item Delivery
             {
-                "name": "Appliance Delivery",
-                "description": "Safe delivery of large appliances like refrigerators and washing machines.",
-                "category": "Large Item Delivery",
+                "name": "Heavy & Large Item Delivery",
+                "description": "Specialized transport for oversized items, appliances, and bulky goods.",
+                "category": "Man & Van Services",
                 "icon": "IconArrowsMaximize",
             },
             {
-                "name": "Oversized Item Transport",
-                "description": "Specialized transport for items that exceed standard vehicle dimensions.",
-                "category": "Large Item Delivery",
-                "icon": "IconArrowsMaximize",
-            },
-            # Business Logistics
-            {
-                "name": "B2B Delivery",
-                "description": "Business-to-business delivery solutions for commercial clients.",
-                "category": "Business Logistics",
-                "icon": "IconBriefcase",
-            },
-            {
-                "name": "E-commerce Fulfillment",
-                "description": "Order fulfillment and delivery services for online retailers.",
-                "category": "Business Logistics",
-                "icon": "IconBriefcase",
-            },
-            # Fragile Item Moving
-            {
-                "name": "Artwork Transport",
-                "description": "Expert handling and transport of paintings, sculptures, and artwork.",
-                "category": "Fragile Item Moving",
+                "name": "Specialist & Antiques Delivery",
+                "description": "Expert handling and transport of delicate, valuable, or antique items.",
+                "category": "Man & Van Services",
                 "icon": "IconGlass",
             },
+            # Vehicle Delivery
             {
-                "name": "Antique Moving",
-                "description": "Specialized moving services for valuable antiques and collectibles.",
-                "category": "Fragile Item Moving",
-                "icon": "IconGlass",
+                "name": "Car Transport",
+                "description": "Safe and reliable car delivery services across the country.",
+                "category": "Vehicle Delivery",
+                "icon": "IconCar",
             },
             {
-                "name": "Glass Item Transport",
-                "description": "Safe transport of fragile glass items and mirrors.",
-                "category": "Fragile Item Moving",
-                "icon": "IconGlass",
-            },
-            # Emergency Moving
-            {
-                "name": "Emergency Relocation",
-                "description": "Urgent moving services for emergency situations.",
-                "category": "Emergency Moving",
-                "icon": "IconClock",
-            },
-            {
-                "name": "Last-minute Moving",
-                "description": "Quick response moving services for immediate needs.",
-                "category": "Emergency Moving",
-                "icon": "IconClock",
-            },
-            # Packing Services
-            {
-                "name": "Professional Packing",
-                "description": "Expert packing services using quality materials and techniques.",
-                "category": "Packing Services",
-                "icon": "IconPackageImport",
-            },
-            {
-                "name": "Unpacking Services",
-                "description": "Professional unpacking and organization services.",
-                "category": "Packing Services",
-                "icon": "IconPackageImport",
-            },
-            {
-                "name": "Specialty Item Packing",
-                "description": "Specialized packing for delicate and valuable items.",
-                "category": "Packing Services",
-                "icon": "IconPackageImport",
-            },
-            # Assembly Services
-            {
-                "name": "Furniture Assembly",
-                "description": "Professional assembly of flat-pack and complex furniture.",
-                "category": "Assembly Services",
-                "icon": "IconTool",
-            },
-            {
-                "name": "Equipment Installation",
-                "description": "Installation and setup of commercial equipment.",
-                "category": "Assembly Services",
-                "icon": "IconTool",
-            },
-            # Waste Removal
-            {
-                "name": "House Clearance",
-                "description": "Complete house clearance and waste removal services.",
-                "category": "Waste Removal",
-                "icon": "IconTrash",
-            },
-            {
-                "name": "Furniture Disposal",
-                "description": "Safe disposal of unwanted furniture and large items.",
-                "category": "Waste Removal",
-                "icon": "IconTrash",
-            },
-            # Pet Transport
-            {
-                "name": "Pet Moving",
-                "description": "Safe and comfortable transport services for pets during relocations.",
-                "category": "Pet Transport",
-                "icon": "IconDog",
-            },
-            {
-                "name": "Pet-friendly Moving",
-                "description": "Moving services that accommodate pets during the process.",
-                "category": "Pet Transport",
-                "icon": "IconDog",
+                "name": "Motorcycle Transport",
+                "description": "Specialized motorcycle transport with proper securing.",
+                "category": "Vehicle Delivery",
+                "icon": "IconMotorbike",
             },
         ]
