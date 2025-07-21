@@ -75,7 +75,6 @@ INSTALLED_APPS = [
     "apps.CommonItems",
     "apps.RequestItems",
     "apps.JourneyStop",
-    "sslserver",
 ]
 
 MIDDLEWARE = [
