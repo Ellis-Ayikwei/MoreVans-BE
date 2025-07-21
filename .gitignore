@@ -2,3 +2,100 @@
 .env
 moreV
 venv
+
+
+# Python
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+alumni-venv/
+venv/
+env/
+ENV/
+.venv/
+.env/
+
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+
+# Environment variables
+.env
+.env.local
+.env.production
+.env.staging
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+app_*.log
+*.out
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Flask
+instance/
+.webassets-cache
+
+app/uploads/
+app/debug_uploads/
+app/uploads/images/
+app/uploads/*.pdf
+app/uploads/*.png
+app/uploads/*.jpg
+app/uploads/*.jpeg
+app/uploads/*.xls
+app/uploads/*.xlsx
+app/uploads/*.doc
+app/uploads/*.docx
+
+# Other uploads
+*.pdf
+*.xls
+*.xlsx
+
+# Alembic
+app/alembic/versions/
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
+# MyPy
+.mypy_cache/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+
+**/__pycache__/
