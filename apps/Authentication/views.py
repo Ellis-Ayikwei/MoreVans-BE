@@ -6,7 +6,7 @@ from django.urls import reverse
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from apps.User.models import User
-from apps.User.serializer import UserSerializer
+from apps.User.serializer import UserAuthSerializer, UserSerializer
 from rest_framework import status, permissions
 from rest_framework.views import APIView
 from rest_framework import viewsets
@@ -131,7 +131,7 @@ class LoginAPIView(APIView):
             refresh_token = str(refresh)
 
             # Create response with user data but no tokens in the body
-            response = Response({"user": UserSerializer(user).data})
+            response = Response({"user": UserAuthSerializer(user).data})
 
             # Add tokens to response headers
             response["Authorization"] = f"Bearer {access_token}"

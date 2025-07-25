@@ -137,6 +137,18 @@ class PaymentViewSet(viewsets.ModelViewSet):
     serializer_class = PaymentSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_permissions(self):
+        """
+        Instantiate and return the list of permissions that this view requires.
+        """
+        if self.action == "create_checkout_session":
+            return [permissions.AllowAny()]
+        elif self.action in ["create", "update", "partial_update", "destroy"]:
+            # Only admins can create/update/delete payments directly
+            return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
+        else:
+            return [permissions.IsAuthenticated()]
+
     def get_queryset(self):
         queryset = Payment.objects.all()
         request_id = self.request.query_params.get("request", None)
@@ -168,18 +180,6 @@ class PaymentViewSet(viewsets.ModelViewSet):
         return queryset.select_related("request", "request__user").order_by(
             "-created_at"
         )
-
-    def get_permissions(self):
-        """
-        Instantiate and return the list of permissions that this view requires.
-        """
-        if self.action in ["create", "update", "partial_update", "destroy"]:
-            # Only admins can create/update/delete payments directly
-            permission_classes = [permissions.IsAuthenticated, permissions.IsAdminUser]
-        else:
-            permission_classes = [permissions.IsAuthenticated]
-
-        return [permission() for permission in permission_classes]
 
     @action(detail=False, methods=["get"], permission_classes=[permissions.IsAdminUser])
     def admin_stats(self, request):
@@ -884,3 +884,6 @@ def stripe_webhook(request):
     Legacy webhook endpoint - redirects to new endpoint
     """
     return HttpResponse("Use /api/payments/webhook/ endpoint", status=410)
+
+
+2610

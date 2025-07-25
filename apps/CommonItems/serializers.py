@@ -194,9 +194,10 @@ class ItemBrandWithModelsSerializer(ItemBrandSerializer):
 class CommonItemListSerializer(serializers.ModelSerializer):
     """Simplified serializer for CommonItem list view"""
 
-    category = serializers.CharField(source="category.name")
-    brand = serializers.SerializerMethodField()
-    model = serializers.SerializerMethodField()
+    category = ItemCategorySerializer(read_only=True)
+    brand = ItemBrandSerializer(read_only=True)
+    model = ItemModelSerializer(read_only=True)
+    type = ItemTypeSerializer(read_only=True)
     weight = serializers.CharField(source="get_weight_display", read_only=True)
     dimensions = serializers.CharField(source="get_dimensions_display", read_only=True)
     fragile = serializers.CharField(source="get_fragile_display", read_only=True)
@@ -220,6 +221,7 @@ class CommonItemListSerializer(serializers.ModelSerializer):
             "category",
             "brand",
             "model",
+            "type",
             "weight",
             "dimensions",
             "fragile",

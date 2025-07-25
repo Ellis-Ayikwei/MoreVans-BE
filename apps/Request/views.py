@@ -897,6 +897,7 @@ class RequestViewSet(viewsets.ModelViewSet):
             instance.staff_required = request.data.get(
                 "staff_count", instance.staff_required
             )
+            instance.user_id = request.data.get("user_id", instance.user_id)
 
             # Handle journey stops if present
             journey_stops = request.data.get("journey_stops", [])

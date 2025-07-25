@@ -98,6 +98,31 @@ class UserWithGroupsSerializer(serializers.ModelSerializer):
         read_only_fields = ("rating", "last_active", "date_joined")
 
 
+class UserAuthSerializer(serializers.ModelSerializer):
+    """Simplified user serializer for authentication state - excludes groups, permissions, and activities"""
+
+    class Meta:
+        model = User
+        fields = (
+            "id",
+            "email",
+            "first_name",
+            "last_name",
+            "phone_number",
+            "profile_picture",
+            "rating",
+            "user_type",
+            "account_status",
+            "last_active",
+            "date_joined",
+        )
+        read_only_fields = (
+            "rating",
+            "last_active",
+            "date_joined",
+        )
+
+
 class UserSerializer(serializers.ModelSerializer):
     groups = GroupSerializer(many=True, read_only=True)
     user_permissions = serializers.SerializerMethodField(read_only=True)
