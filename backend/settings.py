@@ -27,7 +27,7 @@ load_dotenv(BASE_DIR / ".env")
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("DJANGO_SECRETE_KEY")
+SECRET_KEY = os.getenv("DJANGO_SECRETE_KEY", "temporary-secret-key-for-development-only-change-in-production")
 OPENWEATHERMAP_API_KEY = os.environ.get("OPENWEATHERMAP_API_KEY", "")
 GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 
@@ -94,7 +94,10 @@ ROOT_URLCONF = "backend.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [
+            os.path.join(BASE_DIR, "apps", "Authentication", "templates"),
+            os.path.join(BASE_DIR, "apps", "Request", "templates"),
+        ],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -112,7 +115,7 @@ ASGI_APPLICATION = "backend.asgi.application"
 
 DATABASES = {
     "default": {
-        "ENGINE": "django.contrib.gis.db.backends.postgis",
+        "ENGINE": "django.db.backends.postgresql",  # Temporarily use regular PostgreSQL
         "NAME": "morevans",  # database name
         "USER": "postgres",  # database user
         "PASSWORD": "@Toshib123",  # database password
@@ -148,20 +151,24 @@ else:
     GEOS_LIBRARY_PATH = ctypes.util.find_library("geos_c")
 
     if not GDAL_LIBRARY_PATH:
-        raise OSError("Could not find GDAL library on Linux")
+        # Temporarily disable GDAL requirement for migrations
+        # raise OSError("Could not find GDAL library on Linux")
+        GDAL_LIBRARY_PATH = None
     if not GEOS_LIBRARY_PATH:
-        raise OSError("Could not find GEOS library on Linux")
+        # Temporarily disable GEOS requirement for migrations  
+        # raise OSError("Could not find GEOS library on Linux")
+        GEOS_LIBRARY_PATH = None
 
-# Load GDAL dynamically to ensure it works
-try:
-    gdal_lib = CDLL(GDAL_LIBRARY_PATH)
-    print("GDAL loaded successfully:", GDAL_LIBRARY_PATH)
-except OSError as e:
-    print("Error loading GDAL:", e)
+# Load GDAL dynamically to ensure it works (temporarily disabled for migrations)
+# try:
+#     gdal_lib = CDLL(GDAL_LIBRARY_PATH)
+#     print("GDAL loaded successfully:", GDAL_LIBRARY_PATH)
+# except OSError as e:
+#     print("Error loading GDAL:", e)
 
 # Optional: Set the variables explicitly for Django (if using settings)
-os.environ["GDAL_LIBRARY_PATH"] = GDAL_LIBRARY_PATH
-os.environ["GEOS_LIBRARY_PATH"] = GEOS_LIBRARY_PATH
+# os.environ["GDAL_LIBRARY_PATH"] = GDAL_LIBRARY_PATH
+# os.environ["GEOS_LIBRARY_PATH"] = GEOS_LIBRARY_PATH
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
@@ -330,7 +337,7 @@ LOGGING = {
 }
 
 # --- mailing system setting ----
-# EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_BACKEND = "apps.Authentication.email_backend.GmailSSLBackend"
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL")
 EMAIL_HOST = os.getenv("EMAIL_HOST")
 EMAIL_PORT = os.getenv("EMAIL_PORT")

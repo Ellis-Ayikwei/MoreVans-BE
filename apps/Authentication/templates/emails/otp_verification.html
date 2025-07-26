@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ subject }}</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 300;
+        }
+        .content {
+            padding: 40px 30px;
+            text-align: center;
+        }
+        .otp-code {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-size: 32px;
+            font-weight: bold;
+            padding: 20px 30px;
+            border-radius: 8px;
+            margin: 30px 0;
+            letter-spacing: 4px;
+            display: inline-block;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+        .message {
+            font-size: 16px;
+            margin: 20px 0;
+            color: #555;
+        }
+        .warning {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 6px;
+            padding: 15px;
+            margin: 20px 0;
+            color: #856404;
+        }
+        .footer {
+            background-color: #f8f9fa;
+            padding: 20px;
+            text-align: center;
+            border-top: 1px solid #e9ecef;
+        }
+        .footer p {
+            margin: 5px 0;
+            font-size: 14px;
+            color: #6c757d;
+        }
+        .contact-info {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            margin: 20px 0;
+        }
+        @media (max-width: 600px) {
+            body {
+                padding: 10px;
+            }
+            .content {
+                padding: 20px 15px;
+            }
+            .otp-code {
+                font-size: 28px;
+                padding: 15px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{{ company_name|default:"MoreVans" }}</h1>
+            <p>{{ otp_purpose|default:"Email Verification" }}</p>
+        </div>
+
+        <div class="content">
+            <h2>Hello {{ user_name|default:"there" }}!</h2>
+            
+            {% if otp_type == 'signup_verification' %}
+                <p class="message">
+                    Welcome to {{ company_name|default:"MoreVans" }}! To complete your account registration, 
+                    please use the verification code below:
+                </p>
+            {% elif otp_type == 'login_verification' %}
+                <p class="message">
+                    We've detected a login attempt for your account. If this was you, 
+                    please use the verification code below to complete your login:
+                </p>
+            {% elif otp_type == 'password_reset' %}
+                <p class="message">
+                    You've requested to reset your password. Please use the verification code below to proceed:
+                </p>
+            {% elif otp_type == 'email_change' %}
+                <p class="message">
+                    You've requested to change your email address. Please use the verification code below to confirm:
+                </p>
+            {% else %}
+                <p class="message">
+                    Please use the verification code below to complete your request:
+                </p>
+            {% endif %}
+
+            <div class="otp-code">{{ otp_code }}</div>
+
+            <p class="message">
+                This code will expire in <strong>{{ expiry_minutes|default:"10" }} minutes</strong>.
+            </p>
+
+            <div class="warning">
+                <strong>Security Notice:</strong> Never share this code with anyone. Our team will never ask for your verification code.
+            </div>
+
+            {% if login_url %}
+                <p>
+                    <a href="{{ login_url }}" class="btn">Complete Verification</a>
+                </p>
+            {% endif %}
+
+            <div class="contact-info">
+                <p><strong>Need help?</strong></p>
+                <p>If you didn't request this verification or need assistance, please contact us:</p>
+                <p>Email: {{ support_email|default:"support@morevans.com" }}</p>
+                <p>Phone: {{ support_phone|default:"+44 20 7946 0958" }}</p>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>This is an automated message, please do not reply directly to this email.</p>
+            <p>&copy; {% now "Y" %} {{ company_name|default:"MoreVans" }}. All rights reserved.</p>
+            <p>Sent at {{ sent_time|default:now|date:"F j, Y g:i A" }}</p>
+        </div>
+    </div>
+</body>
+</html>
