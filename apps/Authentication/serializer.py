@@ -4,6 +4,8 @@ from django.contrib.auth.password_validation import validate_password
 from django.db import IntegrityError
 from django.db.models import Q
 import logging
+from .models import OTP, UserVerification
+from .utils import OTPValidator, mask_email, mask_phone
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +64,13 @@ class RegisterSerializer(serializers.ModelSerializer):
                 # phone_number=validated_data.get('phone_number', ''),
                 # user_type=validated_data.get('user_type', 'customer')
             )
+            
+            # Set user as inactive until email verification
+            user.is_active = False
+            user.save()
+            
+            # Create UserVerification record
+            UserVerification.objects.create(user=user)
 
             # Additional setup steps can be added here
             # For example, creating default profiles, settings, etc.
@@ -196,3 +205,71 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
 class PasswordChangeSerializer(serializers.Serializer):
     new_password = serializers.CharField(required=True, validators=[validate_password])
+
+
+class OTPSerializer(serializers.Serializer):
+    """Serializer for OTP verification"""
+    otp_code = serializers.CharField(max_length=6, min_length=6)
+    
+    def validate_otp_code(self, value):
+        is_valid, error_message = OTPValidator.validate_otp_format(value)
+        if not is_valid:
+            raise serializers.ValidationError(error_message)
+        return value
+
+
+class SendOTPSerializer(serializers.Serializer):
+    """Serializer for sending OTP"""
+    email = serializers.EmailField(required=False)
+    phone_number = serializers.CharField(required=False)
+    otp_type = serializers.ChoiceField(choices=[choice[0] for choice in OTP.OTP_TYPES])
+    
+    def validate(self, attrs):
+        if not attrs.get('email') and not attrs.get('phone_number'):
+            raise serializers.ValidationError("Either email or phone number is required")
+        return attrs
+
+
+class VerifyOTPSerializer(serializers.Serializer):
+    """Serializer for verifying OTP"""
+    email = serializers.EmailField(required=False)
+    phone_number = serializers.CharField(required=False)
+    otp_code = serializers.CharField(max_length=6, min_length=6)
+    otp_type = serializers.ChoiceField(choices=[choice[0] for choice in OTP.OTP_TYPES])
+    
+    def validate(self, attrs):
+        if not attrs.get('email') and not attrs.get('phone_number'):
+            raise serializers.ValidationError("Either email or phone number is required")
+        
+        # Validate OTP format
+        is_valid, error_message = OTPValidator.validate_otp_format(attrs['otp_code'])
+        if not is_valid:
+            raise serializers.ValidationError({'otp_code': error_message})
+            
+        return attrs
+
+
+class ResendOTPSerializer(serializers.Serializer):
+    """Serializer for resending OTP"""
+    email = serializers.EmailField(required=False)
+    phone_number = serializers.CharField(required=False)
+    otp_type = serializers.ChoiceField(choices=[choice[0] for choice in OTP.OTP_TYPES])
+    
+    def validate(self, attrs):
+        if not attrs.get('email') and not attrs.get('phone_number'):
+            raise serializers.ValidationError("Either email or phone number is required")
+        return attrs
+
+
+class LoginWithOTPSerializer(serializers.Serializer):
+    """Serializer for login with OTP"""
+    email = serializers.EmailField()
+    otp_code = serializers.CharField(max_length=6, min_length=6, required=False)
+    request_otp = serializers.BooleanField(default=False)
+    
+    def validate_otp_code(self, value):
+        if value:
+            is_valid, error_message = OTPValidator.validate_otp_format(value)
+            if not is_valid:
+                raise serializers.ValidationError(error_message)
+        return value
