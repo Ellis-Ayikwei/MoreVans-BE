@@ -31,7 +31,13 @@ from .serializer import (
     PasswordRecoverySerializer,
     PasswordResetConfirmSerializer,
     RegisterSerializer,
+    OTPVerificationSerializer,
+    OTPRequestSerializer,
+    SignupWithOTPSerializer,
+    LoginWithOTPSerializer,
 )
+from .otp_service import OTPService
+from .models import OTP
 
 logger = logging.getLogger(__name__)
 
@@ -515,3 +521,286 @@ class TokenVerifyView(APIView):
                 {"detail": "An error occurred during token verification."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class OTPRequestAPIView(APIView):
+    """Request OTP for various purposes"""
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [AnonRateThrottle]
+
+    def post(self, request):
+        serializer = OTPRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        email = serializer.validated_data['email']
+        otp_type = serializer.validated_data['otp_type']
+        ip_address = get_client_ip(request)
+
+        # Check rate limiting
+        rate_limit_check = OTPService.check_rate_limit(email, ip_address)
+        if not rate_limit_check['allowed']:
+            return Response(
+                {"detail": rate_limit_check['message']},
+                status=status.HTTP_429_TOO_MANY_REQUESTS
+            )
+
+        try:
+            # For signup verification, create a temporary user or handle differently
+            if otp_type == 'signup_verification':
+                # Store email in session or cache for later verification
+                request.session['pending_signup_email'] = email
+                # Create a temporary user object for OTP generation
+                from django.contrib.auth import get_user_model
+                User = get_user_model()
+                temp_user = User(email=email)
+                temp_user.save()
+                user = temp_user
+            else:
+                # For other types, user must exist
+                user = User.objects.get(email__iexact=email)
+
+            # Generate and send OTP
+            otp = OTPService.generate_otp(user, otp_type, email)
+            email_sent = OTPService.send_otp_email(otp, request)
+
+            if email_sent:
+                return Response({
+                    "message": f"Verification code sent to {email}",
+                    "expires_in": 600,  # 10 minutes
+                    "remaining_attempts": rate_limit_check.get('remaining_attempts', 0)
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response(
+                    {"detail": "Failed to send verification email. Please try again."},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
+        except User.DoesNotExist:
+            # Don't reveal that email doesn't exist for security
+            return Response({
+                "message": f"If an account exists with {email}, a verification code has been sent."
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Error requesting OTP: {str(e)}")
+            return Response(
+                {"detail": "An error occurred. Please try again."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class OTPVerificationAPIView(APIView):
+    """Verify OTP code"""
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [AnonRateThrottle]
+
+    def post(self, request):
+        serializer = OTPVerificationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        email = serializer.validated_data['email']
+        otp_code = serializer.validated_data['otp_code']
+        otp_type = serializer.validated_data['otp_type']
+
+        # Verify OTP
+        verification_result = OTPService.verify_otp(otp_code, otp_type, email)
+
+        if verification_result['success']:
+            response_data = {
+                "message": verification_result['message'],
+                "verified": True
+            }
+
+            # Handle post-verification actions based on OTP type
+            if otp_type == 'signup_verification':
+                response_data['next_step'] = 'complete_registration'
+            elif otp_type == 'login_verification':
+                # Generate tokens for successful login verification
+                try:
+                    user = User.objects.get(email__iexact=email)
+                    refresh = RefreshToken.for_user(user)
+                    response_data.update({
+                        'access_token': str(refresh.access_token),
+                        'refresh_token': str(refresh),
+                        'user': UserAuthSerializer(user).data
+                    })
+                except User.DoesNotExist:
+                    pass
+            elif otp_type == 'password_reset':
+                response_data['next_step'] = 'set_new_password'
+
+            return Response(response_data, status=status.HTTP_200_OK)
+        else:
+            return Response(
+                {"detail": verification_result['message'], "verified": False},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+
+class EnhancedRegisterAPIView(APIView):
+    """Enhanced registration with OTP verification"""
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = SignupWithOTPSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        email = serializer.validated_data['email']
+        otp_code = serializer.validated_data.get('otp_code')
+        skip_otp = serializer.validated_data.get('skip_otp', False)
+
+        # Check if OTP verification is required
+        if not skip_otp and otp_code:
+            # Verify OTP first
+            verification_result = OTPService.verify_otp(
+                otp_code, 'signup_verification', email
+            )
+            if not verification_result['success']:
+                return Response(
+                    {"detail": verification_result['message']},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        # Create user
+        try:
+            user_data = serializer.validated_data.copy()
+            user_data.pop('password2', None)
+            user_data.pop('otp_code', None)
+            user_data.pop('skip_otp', None)
+
+            user = User.objects.create_user(**user_data)
+            
+            if skip_otp:
+                # Send welcome email with OTP for email verification
+                otp = OTPService.generate_otp(user, 'signup_verification')
+                OTPService.send_otp_email(otp, request)
+                message = "User created successfully. Please check your email for verification."
+            else:
+                message = "Account created and verified successfully!"
+
+            return Response({
+                "message": message,
+                "user_id": str(user.id),
+                "email": user.email
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            logger.error(f"Error creating user: {str(e)}")
+            return Response(
+                {"detail": "An error occurred during registration."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class EnhancedLoginAPIView(APIView):
+    """Enhanced login with optional OTP verification"""
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+    throttle_classes = [AnonRateThrottle]
+
+    def post(self, request):
+        serializer = LoginWithOTPSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        email = serializer.validated_data['email']
+        password = serializer.validated_data['password']
+        otp_code = serializer.validated_data.get('otp_code')
+        ip_address = get_client_ip(request)
+
+        # Record login attempt
+        OTPService.record_login_attempt(email, ip_address, False)
+
+        try:
+            # Authenticate user
+            user = User.objects.get(email__iexact=email)
+            if not user.check_password(password):
+                return Response(
+                    {"detail": "Invalid credentials"},
+                    status=status.HTTP_401_UNAUTHORIZED
+                )
+
+            # Check if account is locked
+            failed_attempts = OTPService.get_failed_login_attempts(email)
+            if failed_attempts >= 5:
+                return Response(
+                    {"detail": "Account temporarily locked due to multiple failed attempts."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Check if OTP is required (e.g., for suspicious login)
+            requires_otp = self._requires_otp_verification(user, request)
+
+            if requires_otp and not otp_code:
+                # Send OTP and request verification
+                otp = OTPService.generate_otp(user, 'login_verification')
+                OTPService.send_otp_email(otp, request)
+                return Response({
+                    "detail": "Verification code required",
+                    "requires_otp": True,
+                    "message": f"Verification code sent to {email}"
+                }, status=status.HTTP_202_ACCEPTED)
+
+            elif requires_otp and otp_code:
+                # Verify OTP
+                verification_result = OTPService.verify_otp(
+                    otp_code, 'login_verification', email, user
+                )
+                if not verification_result['success']:
+                    return Response(
+                        {"detail": verification_result['message']},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+            # Successful login
+            OTPService.record_login_attempt(email, ip_address, True)
+            
+            # Update user last login
+            user.last_login = timezone.now()
+            user.save(update_fields=['last_login'])
+
+            # Generate tokens
+            refresh = RefreshToken.for_user(user)
+            
+            return Response({
+                "access_token": str(refresh.access_token),
+                "refresh_token": str(refresh),
+                "user": UserAuthSerializer(user).data,
+                "message": "Login successful"
+            }, status=status.HTTP_200_OK)
+
+        except User.DoesNotExist:
+            return Response(
+                {"detail": "Invalid credentials"},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        except Exception as e:
+            logger.error(f"Login error: {str(e)}")
+            return Response(
+                {"detail": "An error occurred during login."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    def _requires_otp_verification(self, user, request):
+        """
+        Determine if OTP verification is required based on risk factors
+        """
+        # You can implement risk-based authentication here
+        # For now, let's require OTP for admin users or based on settings
+        
+        # Check if user is admin
+        if user.user_type == 'admin':
+            return True
+            
+        # Check for suspicious activity (e.g., login from new IP)
+        # This is a simplified example
+        ip_address = get_client_ip(request)
+        recent_logins = OTPService.get_failed_login_attempts(user.email, window_minutes=1440)  # 24 hours
+        
+        # Require OTP if there were recent failed attempts
+        if recent_logins > 0:
+            return True
+            
+        return False

@@ -3,6 +3,7 @@ from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from django.db import IntegrityError
 from django.db.models import Q
+from .models import OTP
 import logging
 
 logger = logging.getLogger(__name__)
@@ -196,3 +197,90 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
 class PasswordChangeSerializer(serializers.Serializer):
     new_password = serializers.CharField(required=True, validators=[validate_password])
+
+
+class OTPVerificationSerializer(serializers.Serializer):
+    """Serializer for OTP verification"""
+    email = serializers.EmailField()
+    otp_code = serializers.CharField(max_length=6, min_length=6)
+    otp_type = serializers.ChoiceField(choices=OTP.OTP_TYPES)
+
+    def validate_otp_code(self, value):
+        """Validate OTP code format"""
+        if not value.isdigit():
+            raise serializers.ValidationError("OTP code must contain only digits")
+        return value
+
+
+class OTPRequestSerializer(serializers.Serializer):
+    """Serializer for requesting OTP"""
+    email = serializers.EmailField()
+    otp_type = serializers.ChoiceField(choices=OTP.OTP_TYPES)
+
+    def validate_email(self, value):
+        """Validate email exists for certain OTP types"""
+        otp_type = self.initial_data.get('otp_type')
+        
+        if otp_type in ['login_verification', 'password_reset']:
+            if not User.objects.filter(email__iexact=value).exists():
+                raise serializers.ValidationError("No account found with this email address")
+        
+        return value
+
+
+class SignupWithOTPSerializer(serializers.ModelSerializer):
+    """Enhanced registration serializer with OTP verification"""
+    password = serializers.CharField(
+        write_only=True, required=True, validators=[validate_password]
+    )
+    password2 = serializers.CharField(write_only=True, required=True)
+    otp_code = serializers.CharField(max_length=6, min_length=6, required=False)
+    skip_otp = serializers.BooleanField(default=False, required=False)
+
+    class Meta:
+        model = User
+        fields = ("email", "password", "password2", "first_name", "last_name", 
+                 "phone_number", "user_type", "otp_code", "skip_otp")
+
+    def validate(self, attrs):
+        # Check if passwords match
+        if attrs.get("password") != attrs.get("password2"):
+            raise serializers.ValidationError(
+                {"password": "Password fields didn't match."}
+            )
+
+        # Check if user with email already exists
+        email = attrs.get("email")
+        if email and User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError(
+                {"email": "User with this email already exists."}
+            )
+
+        # Check if user with phone number already exists (if provided)
+        phone_number = attrs.get("phone_number")
+        if phone_number and User.objects.filter(phone_number=phone_number).exists():
+            raise serializers.ValidationError(
+                {"phone_number": "User with this phone number already exists."}
+            )
+
+        return attrs
+
+    def validate_otp_code(self, value):
+        """Validate OTP code format"""
+        if value and not value.isdigit():
+            raise serializers.ValidationError("OTP code must contain only digits")
+        return value
+
+
+class LoginWithOTPSerializer(serializers.Serializer):
+    """Enhanced login serializer with optional OTP verification"""
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+    otp_code = serializers.CharField(max_length=6, min_length=6, required=False)
+    remember_me = serializers.BooleanField(default=False)
+
+    def validate_otp_code(self, value):
+        """Validate OTP code format"""
+        if value and not value.isdigit():
+            raise serializers.ValidationError("OTP code must contain only digits")
+        return value
