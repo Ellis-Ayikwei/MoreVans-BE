@@ -1,0 +1,27 @@
+{{ app_name|default:"Your App" }}
+================================
+
+Hello {{ user_name|default:"there" }}!
+
+{{ message }}
+
+Your verification code is:
+
+    {{ otp_code }}
+
+This code is valid for {{ validity_minutes }} minutes.
+
+{% if action_url %}
+To verify your account, visit:
+{{ action_url }}
+{% endif %}
+
+SECURITY NOTICE:
+This code is confidential. Do not share it with anyone.
+We will never ask for this code over phone or email.
+
+---
+This is an automated message, please do not reply to this email.
+If you didn't request this code, please ignore this email or contact support.
+
+© {{ current_year }} {{ app_name|default:"Your App" }}. All rights reserved.

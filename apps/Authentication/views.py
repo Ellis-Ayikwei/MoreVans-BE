@@ -31,7 +31,14 @@ from .serializer import (
     PasswordRecoverySerializer,
     PasswordResetConfirmSerializer,
     RegisterSerializer,
+    SendOTPSerializer,
+    VerifyOTPSerializer,
+    ResendOTPSerializer,
+    LoginWithOTPSerializer,
+    OTPSerializer,
 )
+from .models import OTP, UserVerification
+from .utils import OTPEmailService, OTPValidator, mask_email
 
 logger = logging.getLogger(__name__)
 
@@ -54,13 +61,31 @@ class RegisterAPIView(APIView):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
-            # Send verification email here
-            return Response(
-                {
-                    "message": "User created successfully. Please check your email for verification."
-                },
-                status=status.HTTP_201_CREATED,
-            )
+            
+            # Generate and send OTP for email verification
+            try:
+                otp = OTP.generate_otp(user, 'signup')
+                OTPEmailService.send_otp_email(user, otp, 'signup')
+                
+                return Response(
+                    {
+                        "message": "User created successfully. Please check your email for verification code.",
+                        "email": mask_email(user.email),
+                        "user_id": str(user.id),
+                        "otp_sent": True
+                    },
+                    status=status.HTTP_201_CREATED,
+                )
+            except Exception as e:
+                logger.exception(f"Failed to send verification email: {str(e)}")
+                return Response(
+                    {
+                        "message": "User created but failed to send verification email. Please request a new OTP.",
+                        "user_id": str(user.id),
+                        "otp_sent": False
+                    },
+                    status=status.HTTP_201_CREATED,
+                )
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -515,3 +540,246 @@ class TokenVerifyView(APIView):
                 {"detail": "An error occurred during token verification."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class SendOTPView(APIView):
+    """Send OTP to user's email or phone"""
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [AnonRateThrottle]
+    
+    def post(self, request):
+        serializer = SendOTPSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        email = serializer.validated_data.get('email')
+        phone_number = serializer.validated_data.get('phone_number')
+        otp_type = serializer.validated_data.get('otp_type')
+        
+        try:
+            # Find user by email or phone
+            if email:
+                user = User.objects.filter(email=email).first()
+            else:
+                user = User.objects.filter(phone_number=phone_number).first()
+            
+            if not user:
+                # For security, don't reveal if user exists or not
+                return Response({
+                    'message': f'If an account exists, an OTP has been sent to {mask_email(email) if email else "your phone"}',
+                    'masked_recipient': mask_email(email) if email else None
+                })
+            
+            # Check rate limiting using cache
+            rate_limit_key = OTPValidator.get_rate_limit_key(user, otp_type)
+            attempts = cache.get(rate_limit_key, 0)
+            
+            if attempts >= 5:  # Max 5 OTP requests per hour
+                return Response({
+                    'detail': 'Too many OTP requests. Please try again later.'
+                }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+            
+            # Check resend cooldown
+            cooldown_key = OTPValidator.get_resend_cooldown_key(user, otp_type)
+            if cache.get(cooldown_key):
+                return Response({
+                    'detail': 'Please wait before requesting another OTP.'
+                }, status=status.HTTP_429_TOO_MANY_REQUESTS)
+            
+            # Generate OTP
+            otp = OTP.generate_otp(user, otp_type)
+            
+            # Send OTP email
+            if email:
+                OTPEmailService.send_otp_email(user, otp, otp_type)
+            
+            # Update rate limiting
+            cache.set(rate_limit_key, attempts + 1, 3600)  # 1 hour expiry
+            cache.set(cooldown_key, True, 60)  # 1 minute cooldown
+            
+            return Response({
+                'message': f'OTP sent successfully to {mask_email(email) if email else "your phone"}',
+                'masked_recipient': mask_email(email) if email else None,
+                'validity_minutes': 10
+            })
+            
+        except Exception as e:
+            logger.exception(f"Error sending OTP: {str(e)}")
+            return Response({
+                'detail': 'Failed to send OTP. Please try again later.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class VerifyOTPView(APIView):
+    """Verify OTP and perform action based on OTP type"""
+    permission_classes = [permissions.AllowAny]
+    
+    def post(self, request):
+        serializer = VerifyOTPSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        email = serializer.validated_data.get('email')
+        phone_number = serializer.validated_data.get('phone_number')
+        otp_code = serializer.validated_data.get('otp_code')
+        otp_type = serializer.validated_data.get('otp_type')
+        
+        try:
+            # Find user
+            if email:
+                user = User.objects.filter(email=email).first()
+            else:
+                user = User.objects.filter(phone_number=phone_number).first()
+            
+            if not user:
+                return Response({
+                    'detail': 'Invalid OTP or user not found.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Find valid OTP
+            otp = OTP.objects.filter(
+                user=user,
+                otp_type=otp_type,
+                is_used=False
+            ).order_by('-created_at').first()
+            
+            if not otp or not otp.is_valid():
+                return Response({
+                    'detail': 'Invalid or expired OTP.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Verify OTP
+            if not otp.verify(otp_code):
+                remaining_attempts = otp.max_attempts - otp.attempts
+                return Response({
+                    'detail': f'Invalid OTP. {remaining_attempts} attempts remaining.'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Perform action based on OTP type
+            if otp_type == 'signup':
+                # Activate user account
+                user.is_active = True
+                user.save()
+                
+                # Mark email as verified
+                verification, _ = UserVerification.objects.get_or_create(user=user)
+                verification.email_verified = True
+                verification.email_verified_at = timezone.now()
+                verification.save()
+                
+                # Generate tokens
+                refresh = RefreshToken.for_user(user)
+                
+                return Response({
+                    'message': 'Email verified successfully. Your account is now active.',
+                    'refresh': str(refresh),
+                    'access': str(refresh.access_token),
+                    'user': UserSerializer(user).data
+                })
+                
+            elif otp_type == 'login':
+                # Generate tokens for login
+                refresh = RefreshToken.for_user(user)
+                
+                # Update last login
+                user.last_login = timezone.now()
+                user.save()
+                
+                return Response({
+                    'message': 'Login successful',
+                    'refresh': str(refresh),
+                    'access': str(refresh.access_token),
+                    'user': UserSerializer(user).data
+                })
+                
+            elif otp_type == 'password_reset':
+                # Return a temporary token for password reset
+                reset_token = PasswordResetTokenGenerator().make_token(user)
+                
+                return Response({
+                    'message': 'OTP verified successfully. You can now reset your password.',
+                    'reset_token': reset_token,
+                    'user_id': str(user.id)
+                })
+            
+            else:
+                return Response({
+                    'message': f'OTP verified successfully for {otp_type}'
+                })
+                
+        except Exception as e:
+            logger.exception(f"Error verifying OTP: {str(e)}")
+            return Response({
+                'detail': 'Failed to verify OTP. Please try again.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ResendOTPView(APIView):
+    """Resend OTP to user"""
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [AnonRateThrottle]
+    
+    def post(self, request):
+        serializer = ResendOTPSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Use the same logic as SendOTPView
+        send_otp_view = SendOTPView()
+        return send_otp_view.post(request)
+
+
+class LoginWithOTPView(APIView):
+    """Login using OTP instead of password"""
+    permission_classes = [permissions.AllowAny]
+    
+    def post(self, request):
+        serializer = LoginWithOTPSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        
+        email = serializer.validated_data.get('email')
+        otp_code = serializer.validated_data.get('otp_code')
+        request_otp = serializer.validated_data.get('request_otp')
+        
+        try:
+            user = User.objects.filter(email=email).first()
+            
+            if not user:
+                return Response({
+                    'detail': 'Invalid credentials'
+                }, status=status.HTTP_401_UNAUTHORIZED)
+            
+            # If requesting OTP
+            if request_otp:
+                # Generate and send OTP
+                otp = OTP.generate_otp(user, 'login')
+                OTPEmailService.send_otp_email(user, otp, 'login')
+                
+                return Response({
+                    'message': f'OTP sent to {mask_email(email)}',
+                    'masked_email': mask_email(email),
+                    'otp_required': True
+                })
+            
+            # If OTP code provided, verify it
+            if otp_code:
+                verify_data = {
+                    'email': email,
+                    'otp_code': otp_code,
+                    'otp_type': 'login'
+                }
+                
+                verify_view = VerifyOTPView()
+                verify_view.request = request
+                return verify_view.post(request)
+            
+            return Response({
+                'detail': 'Please request OTP or provide OTP code'
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+        except Exception as e:
+            logger.exception(f"Error in OTP login: {str(e)}")
+            return Response({
+                'detail': 'Login failed. Please try again.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
