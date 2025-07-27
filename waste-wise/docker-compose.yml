@@ -1,0 +1,131 @@
+version: '3.8'
+
+services:
+  # PostgreSQL with PostGIS
+  postgres:
+    image: postgis/postgis:15-3.3
+    container_name: waste_wise_postgres
+    environment:
+      POSTGRES_DB: waste_wise_db
+      POSTGRES_USER: waste_wise_user
+      POSTGRES_PASSWORD: waste_wise_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - waste_wise_network
+
+  # Redis for caching and Celery broker
+  redis:
+    image: redis:7-alpine
+    container_name: waste_wise_redis
+    ports:
+      - "6379:6379"
+    networks:
+      - waste_wise_network
+
+  # MQTT Broker (Mosquitto)
+  mqtt:
+    image: eclipse-mosquitto:2.0
+    container_name: waste_wise_mqtt
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mqtt/config/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mqtt_data:/mosquitto/data
+      - mqtt_log:/mosquitto/log
+    networks:
+      - waste_wise_network
+
+  # Django Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: waste_wise_backend
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=True
+      - DATABASE_URL=postgis://waste_wise_user:waste_wise_password@postgres:5432/waste_wise_db
+      - REDIS_URL=redis://redis:6379/0
+      - MQTT_BROKER_HOST=mqtt
+      - MQTT_BROKER_PORT=1883
+    depends_on:
+      - postgres
+      - redis
+      - mqtt
+    networks:
+      - waste_wise_network
+
+  # Celery Worker
+  celery:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: waste_wise_celery
+    command: celery -A config worker -l INFO
+    volumes:
+      - ./backend:/app
+    environment:
+      - DATABASE_URL=postgis://waste_wise_user:waste_wise_password@postgres:5432/waste_wise_db
+      - REDIS_URL=redis://redis:6379/0
+      - MQTT_BROKER_HOST=mqtt
+      - MQTT_BROKER_PORT=1883
+    depends_on:
+      - postgres
+      - redis
+      - mqtt
+    networks:
+      - waste_wise_network
+
+  # Celery Beat (Scheduler)
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: waste_wise_celery_beat
+    command: celery -A config beat -l INFO
+    volumes:
+      - ./backend:/app
+    environment:
+      - DATABASE_URL=postgis://waste_wise_user:waste_wise_password@postgres:5432/waste_wise_db
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - waste_wise_network
+
+  # React Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: waste_wise_frontend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:8000/api
+      - VITE_WS_URL=ws://localhost:8000/ws
+    depends_on:
+      - backend
+    networks:
+      - waste_wise_network
+
+networks:
+  waste_wise_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  mqtt_data:
+  mqtt_log:
