@@ -1,129 +1,68 @@
-# urls.py
-from django.urls import path, include
-from django.contrib import admin
+"""
+WasteWise Backend URL Configuration
 
-import apps.ApiConnectionStatus.views
-from rest_framework import routers
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-    TokenVerifyView,
-)
-from apps.Job.views import JobViewSet
+The main URL configuration for the WasteWise Smart Waste Management System.
+Includes API endpoints, admin interface, and documentation.
+"""
+
+from django.contrib import admin
+from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView, SpectacularRedocView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-# Import the ViewSets from Vehicle and Driver apps
-from apps.Vehicle.views import VehicleViewSet, VehicleDocumentViewSet
-from apps.Driver.views import (
-    DriverViewSet,
-    DriverLocationViewSet,
-    DriverAvailabilityViewSet,
-    DriverDocumentViewSet,
-    DriverInfringementViewSet,
-)
-
-# Import Location views for testing
-from apps.Location.views import (
-    google_address_autocomplete_simple,
-    postcode_suggestions_simple,
-    google_place_details,
-    geocode_address,
-    postcode_address_lookup_enhanced,
-    postcode_address_lookup,
-    simple_postcode_addresses,
-)
-
-router = routers.DefaultRouter(trailing_slash=True)
-
-# Register Vehicle app ViewSets
-router.register(r"vehicles", VehicleViewSet)
-router.register(r"vehicle-documents", VehicleDocumentViewSet)
-
-
-router.register(r"jobs", JobViewSet)
+# API URL patterns
+api_v1_patterns = [
+    # Authentication endpoints
+    path('auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('auth/', include('apps.Authentication.urls')),  # Legacy auth endpoints
+    
+    # WasteWise Core API endpoints
+    path('bins/', include('apps.wastewise.bins.urls')),
+    path('sensors/', include('apps.wastewise.sensors.urls')),
+    path('routes/', include('apps.wastewise.routes.urls')),
+    path('vehicles/', include('apps.wastewise.vehicles.urls')),
+    path('users/', include('apps.wastewise.users.urls')),
+    path('alerts/', include('apps.wastewise.alerts.urls')),
+    path('analytics/', include('apps.wastewise.analytics.urls')),
+    path('notifications/', include('apps.wastewise.notifications.urls')),
+    path('reports/', include('apps.wastewise.reports.urls')),
+    
+    # Legacy endpoints (for backward compatibility)
+    path('legacy/', include([
+        path('notifications/', include('apps.Notification.urls')),
+        path('messages/', include('apps.Message.urls')),
+        path('users/', include('apps.User.urls')),
+    ])),
+]
 
 urlpatterns = [
-    # Geocoding endpoints outside API path to bypass authentication issues
-    # API routes with prefix
-    path(
-        "morevans/api/v1/",
-        include(
-            [
-                path(
-                    "geocoding/google-autocomplete/",
-                    google_address_autocomplete_simple,
-                    name="geocoding_google_autocomplete",
-                ),
-                path(
-                    "geocoding/postcode-suggestions/",
-                    postcode_suggestions_simple,
-                    name="geocoding_postcode_suggestions",
-                ),
-                path(
-                    "geocoding/google-place-details/",
-                    google_place_details,
-                    name="geocoding_google_place_details",
-                ),
-                path(
-                    "geocoding/geocode-address/",
-                    geocode_address,
-                    name="geocoding_geocode_address",
-                ),
-                path(
-                    "geocoding/postcode-addresses-simple/",
-                    postcode_address_lookup,
-                    name="geocoding_postcode_addresses_simple",
-                ),
-                path(
-                    "geocoding/postcode-addresses/",
-                    postcode_address_lookup_enhanced,
-                    name="geocoding_postcode_addresses",
-                ),
-                path(
-                    "geocoding/postcode-addresses-demo/",
-                    simple_postcode_addresses,
-                    name="geocoding_postcode_addresses_demo",
-                ),
-                # Test endpoint outside API path
-                path(
-                    "test/google-autocomplete/",
-                    google_address_autocomplete_simple,
-                    name="test_google_autocomplete",
-                ),
-                path("admin/", admin.site.urls),
-                # Include router URLs
-                path("", include(router.urls)),
-                # Status endpoint
-                path(
-                    "status/",
-                    apps.ApiConnectionStatus.views.ApiConnectionStatusView.as_view(),
-                    name="status",
-                ),
-                # Authentication endpoints
-                path("auth/", include("apps.Authentication.urls")),
-                # Request app URLs
-                path("", include("apps.Request.urls")),
-                # User app URLs
-                path("", include("apps.User.urls")),
-                # pricing app URLs
-                path("", include("apps.pricing.urls")),
-                # location app URLs
-                path("", include("apps.Location.urls")),
-                # payment app URLs
-                path("", include("apps.Payment.urls")),
-                # provider app URLs
-                path("", include("apps.Provider.urls")),
-                path("", include("apps.Driver.urls")),
-                path("", include("apps.Bidding.urls")),
-                path("", include("apps.CommonItems.urls")),
-                path("", include("apps.Message.urls")),
-                path("", include("apps.Services.urls")),
-                path("", include("apps.Vehicle.urls")),
-                # Media files under API prefix
-                *static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT),
-            ]
-        ),
-    ),
-    # Add non-API routes here if needed
+    # Django admin
+    path('admin/', admin.site.urls),
+    
+    # API documentation
+    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+    path('api/redoc/', SpectacularRedocView.as_view(url_name='schema'), name='redoc'),
+    
+    # API endpoints
+    path('api/v1/', include(api_v1_patterns)),
+    
+    # Health check endpoints
+    path('health/', include('health_check.urls')),
+    
+    # WebSocket endpoints (for real-time features)
+    # Note: These are handled by ASGI routing in production
 ]
+
+# Serve media files in development
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+
+# Admin site customization
+admin.site.site_header = "WasteWise Administration"
+admin.site.site_title = "WasteWise Admin"
+admin.site.index_title = "Smart Waste Management System"
