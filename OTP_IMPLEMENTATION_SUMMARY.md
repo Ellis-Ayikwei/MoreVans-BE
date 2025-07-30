@@ -2,13 +2,9 @@
 
 ## What Was Implemented
 
-### 1. **OTP Models** (`apps/Authentication/models.py`)
-- **OTP Model**: Stores one-time passwords with features like:
-  - Multiple OTP types (signup, login, password_reset, email_change, phone_change)
-  - Expiration tracking
-  - Attempt limiting (max 3 attempts by default)
-  - Automatic invalidation of previous unused OTPs
-  
+### 1. **Django-OTP Integration** 
+- **EmailDevice**: Uses django-otp's built-in email OTP system
+- **TOTPDevice**: Ready for future TOTP (Google Authenticator) implementation
 - **UserVerification Model**: Tracks user verification status for email and phone
 
 ### 2. **Email Templates** (`templates/emails/`)
@@ -20,10 +16,10 @@
   
 - **Plain Text Template** (`otp_verification.txt`): Fallback for email clients that don't support HTML
 
-### 3. **OTP Utilities** (`apps/Authentication/utils.py`)
-- **OTPEmailService**: Handles sending OTP emails with template rendering
-- **OTPValidator**: Validates OTP format and provides utility functions
-- **Helper Functions**: Email/phone masking for security
+### 3. **OTP Service** (`apps/Authentication/otp_service.py`)
+- **OTPService**: Clean service class using django-otp
+- **Custom Email Backend**: Integrates beautiful templates with django-otp
+- **Rate Limiting**: Custom rate limiting and cooldown system
 
 ### 4. **API Views** (`apps/Authentication/views.py`)
 - **SendOTPView**: Send OTP with rate limiting

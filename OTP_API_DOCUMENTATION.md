@@ -1,137 +1,109 @@
-# OTP System API Documentation
+# OTP API Documentation
 
 ## Overview
+This document describes the new clean OTP implementation using django-otp. The system provides three main authentication flows:
 
-The OTP (One-Time Password) system provides secure user authentication and verification through email-based OTP codes. It supports user sign-up verification, login authentication, password reset, and other verification scenarios.
-
-## Features
-
-- **Email-based OTP delivery** with beautiful HTML templates
-- **Multiple OTP types**: signup, login, password reset, email change, phone change
-- **Security features**: rate limiting, attempt tracking, expiration, masking
-- **User verification tracking**: email and phone verification status
-- **Flexible OTP validity periods** and customizable attempt limits
+1. **Normal Login**: Standard email/password authentication
+2. **MFA Login**: Two-step email/password + OTP authentication
+3. **TOTP MFA**: Email/password + TOTP (Time-based One-Time Password) authentication
 
 ## API Endpoints
 
-### 1. User Registration
+### 1. Send OTP
+**POST** `/api/auth/otp/send/`
 
-**Endpoint**: `POST /api/auth/register/`
+Send OTP to user's email for various purposes.
 
-**Description**: Register a new user account. The user will be created as inactive and an OTP will be sent for email verification.
-
-**Request Body**:
+**Request Body:**
 ```json
 {
     "email": "user@example.com",
-    "password": "SecurePassword123",
-    "password2": "SecurePassword123"
+    "otp_type": "signup" | "login" | "password_reset" | "email_change"
 }
 ```
 
-**Response**:
+**Response:**
 ```json
 {
-    "message": "User created successfully. Please check your email for verification code.",
-    "email": "u***@example.com",
-    "user_id": "uuid-here",
-    "otp_sent": true
+    "message": "OTP sent successfully to j***@example.com",
+    "masked_email": "j***@example.com",
+    "validity_minutes": 10,
+    "otp_type": "signup"
 }
 ```
 
-### 2. Send OTP
+### 2. Verify OTP
+**POST** `/api/auth/otp/verify/`
 
-**Endpoint**: `POST /api/auth/otp/send/`
+Verify OTP and perform action based on type.
 
-**Description**: Send an OTP to user's email for various purposes.
-
-**Request Body**:
-```json
-{
-    "email": "user@example.com",
-    "otp_type": "signup"  // Options: signup, login, password_reset, email_change, phone_change
-}
-```
-
-**Response**:
-```json
-{
-    "message": "OTP sent successfully to u***@example.com",
-    "masked_recipient": "u***@example.com",
-    "validity_minutes": 10
-}
-```
-
-### 3. Verify OTP
-
-**Endpoint**: `POST /api/auth/otp/verify/`
-
-**Description**: Verify an OTP code and perform the associated action.
-
-**Request Body**:
+**Request Body:**
 ```json
 {
     "email": "user@example.com",
     "otp_code": "123456",
-    "otp_type": "signup"
+    "otp_type": "signup" | "login" | "password_reset" | "email_change"
 }
 ```
 
-**Response (for signup)**:
+**Response for Signup:**
 ```json
 {
     "message": "Email verified successfully. Your account is now active.",
-    "refresh": "jwt-refresh-token",
-    "access": "jwt-access-token",
+    "action": "account_activated",
+    "user_id": "123"
+}
+```
+
+**Response for Login:**
+```json
+{
+    "message": "OTP verified successfully for login.",
+    "action": "login_verified",
+    "user_id": "123",
+    "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+    "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
     "user": {
-        "id": "uuid",
+        "id": 123,
         "email": "user@example.com",
         "first_name": "John",
-        "last_name": "Doe"
+        "last_name": "Doe",
+        "is_active": true
     }
 }
 ```
 
-### 4. Resend OTP
+### 3. MFA Login (Step 1)
+**POST** `/api/auth/mfa/login/`
 
-**Endpoint**: `POST /api/auth/otp/resend/`
+Authenticate with email/password and send OTP for MFA.
 
-**Description**: Resend an OTP (with rate limiting).
-
-**Request Body**:
+**Request Body:**
 ```json
 {
     "email": "user@example.com",
-    "otp_type": "signup"
+    "password": "userpassword"
 }
 ```
 
-**Response**: Same as Send OTP endpoint
-
-### 5. Login with OTP
-
-**Endpoint**: `POST /api/auth/login/otp/`
-
-**Description**: Login using OTP instead of password.
-
-**Request Body (Request OTP)**:
+**Response:**
 ```json
 {
-    "email": "user@example.com",
-    "request_otp": true
+    "message": "Password verified. Please check your email for OTP to complete login.",
+    "masked_email": "j***@example.com",
+    "user_id": "123",
+    "otp_sent": true,
+    "mfa_required": true,
+    "validity_minutes": 10
 }
 ```
 
-**Response**:
-```json
-{
-    "message": "OTP sent to u***@example.com",
-    "masked_email": "u***@example.com",
-    "otp_required": true
-}
-```
+### 4. MFA Login (Step 2)
+**POST** `/api/auth/mfa/verify/`
 
-**Request Body (Verify OTP)**:
+Verify OTP and complete MFA login.
+
+**Request Body:**
 ```json
 {
     "email": "user@example.com",
@@ -139,173 +111,173 @@ The OTP (One-Time Password) system provides secure user authentication and verif
 }
 ```
 
-**Response**:
+**Response:**
 ```json
 {
-    "message": "Login successful",
-    "refresh": "jwt-refresh-token",
-    "access": "jwt-access-token",
+    "message": "MFA login successful.",
+    "action": "mfa_login_completed",
+    "user_id": "123",
+    "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+    "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
     "user": {
-        "id": "uuid",
+        "id": 123,
         "email": "user@example.com",
         "first_name": "John",
-        "last_name": "Doe"
+        "last_name": "Doe",
+        "is_active": true
     }
 }
 ```
 
-## Error Responses
+### 5. Resend OTP
+**POST** `/api/auth/otp/resend/`
 
-### Rate Limiting Error
+Resend OTP to user's email.
+
+**Request Body:**
 ```json
 {
-    "detail": "Too many OTP requests. Please try again later."
+    "email": "user@example.com",
+    "otp_type": "signup" | "login" | "password_reset" | "email_change"
 }
 ```
-**Status Code**: 429
 
-### Invalid OTP
+### 6. TOTP MFA Verification
+**POST** `/api/auth/mfa/totp/`
+
+Verify TOTP during MFA login.
+
+**Request Body:**
 ```json
 {
-    "detail": "Invalid OTP. 2 attempts remaining."
+    "email": "user@example.com",
+    "password": "userpassword",
+    "totp_code": "123456"
 }
 ```
-**Status Code**: 400
 
-### Expired OTP
+**Response:**
 ```json
 {
-    "detail": "Invalid or expired OTP."
+    "message": "MFA verification successful.",
+    "action": "mfa_verified",
+    "user_id": "123",
+    "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+    "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+    "user": {
+        "id": 123,
+        "email": "user@example.com",
+        "first_name": "John",
+        "last_name": "Doe",
+        "is_active": true
+    }
 }
 ```
-**Status Code**: 400
+
+## Authentication Flows
+
+### 1. User Registration Flow
+1. User registers with email/password
+2. System automatically sends OTP to email
+3. User verifies OTP to activate account
+4. Account becomes active
+
+### 2. Normal Login Flow
+1. User provides email/password
+2. System validates credentials
+3. Returns JWT tokens
+4. User is authenticated
+
+### 3. MFA Login Flow (Two-Step)
+1. **Step 1**: User provides email/password
+2. System validates credentials and sends OTP to email
+3. **Step 2**: User provides OTP code
+4. System verifies OTP and returns JWT tokens
+5. User is authenticated
+
+### 4. TOTP MFA Flow
+1. User provides email/password + TOTP code
+2. System validates all credentials
+3. Returns JWT tokens
+4. User is authenticated
+
+### 5. Password Reset Flow
+1. User requests password reset
+2. System sends OTP to email
+3. User verifies OTP
+4. User can set new password
+
+## Error Codes
+
+- `USER_NOT_FOUND`: User with email not found
+- `INVALID_CREDENTIALS`: Invalid email or password
+- `ACCOUNT_INACTIVE`: Account is not active
+- `RATE_LIMIT_EXCEEDED`: Too many OTP requests
+- `COOLDOWN_ACTIVE`: Please wait before requesting another OTP
+- `DEVICE_NOT_FOUND`: No OTP device found for user
+- `INVALID_OTP`: Invalid OTP code
+- `VERIFICATION_FAILED`: Failed to verify OTP
+- `INTERNAL_ERROR`: Internal server error
+
+## Rate Limiting
+
+- **OTP Requests**: Max 5 requests per hour per user
+- **Cooldown**: 1 minute between OTP requests
+- **OTP Validity**: 10 minutes
 
 ## Security Features
 
-1. **Rate Limiting**:
-   - Maximum 5 OTP requests per hour per user
-   - 1-minute cooldown between OTP resends
+- Email masking for privacy
+- Rate limiting to prevent abuse
+- Automatic device cleanup
+- Secure token generation
+- Audit logging
 
-2. **OTP Security**:
-   - 6-digit numeric codes
-   - 10-minute validity period (configurable)
-   - Maximum 3 verification attempts per OTP
-   - Automatic invalidation of previous unused OTPs
+## Frontend Integration Example
 
-3. **Email Masking**:
-   - Emails are masked in responses (e.g., `j***@example.com`)
-   - Prevents email enumeration attacks
-
-## Email Templates
-
-The system uses responsive HTML email templates with:
-- Professional design with green theme
-- Clear OTP display with large, readable font
-- Security warnings
-- Mobile-responsive layout
-- Plain text fallback
-
-## Database Models
-
-### OTP Model
-```python
-- user: ForeignKey to User
-- otp_code: 6-digit code
-- otp_type: Type of OTP (signup, login, etc.)
-- is_used: Boolean flag
-- created_at: Timestamp
-- expires_at: Expiration timestamp
-- attempts: Number of verification attempts
-- max_attempts: Maximum allowed attempts (default: 3)
-```
-
-### UserVerification Model
-```python
-- user: OneToOneField to User
-- email_verified: Boolean
-- phone_verified: Boolean
-- email_verified_at: Timestamp
-- phone_verified_at: Timestamp
-```
-
-## Integration Example
-
-### Frontend Integration (JavaScript)
-
+### MFA Login Flow
 ```javascript
-// Register new user
-async function register(email, password) {
-    const response = await fetch('/api/auth/register/', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-            email: email,
-            password: password,
-            password2: password
-        })
-    });
-    
-    if (response.ok) {
-        const data = await response.json();
-        // Redirect to OTP verification page
-        window.location.href = `/verify-otp?email=${email}&type=signup`;
-    }
+// Step 1: Send email/password and get OTP
+const mfaLoginResponse = await fetch('/api/auth/mfa/login/', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+        email: 'user@example.com',
+        password: 'userpassword'
+    })
+});
+
+if (mfaLoginResponse.ok) {
+    const data = await mfaLoginResponse.json();
+    // Show OTP input form
+    // data.masked_email contains masked email for display
 }
 
-// Verify OTP
-async function verifyOTP(email, otpCode, otpType) {
-    const response = await fetch('/api/auth/otp/verify/', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-            email: email,
-            otp_code: otpCode,
-            otp_type: otpType
-        })
-    });
-    
-    if (response.ok) {
-        const data = await response.json();
-        // Store tokens
-        localStorage.setItem('access_token', data.access);
-        localStorage.setItem('refresh_token', data.refresh);
-        // Redirect to dashboard
-        window.location.href = '/dashboard';
-    }
+// Step 2: Verify OTP and get tokens
+const verifyMfaResponse = await fetch('/api/auth/mfa/verify/', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+        email: 'user@example.com',
+        otp_code: '123456'
+    })
+});
+
+if (verifyMfaResponse.ok) {
+    const data = await verifyMfaResponse.json();
+    // Store tokens
+    localStorage.setItem('access_token', data.access_token);
+    localStorage.setItem('refresh_token', data.refresh_token);
+    // Redirect to dashboard
 }
 ```
 
-## Testing
+## Migration from Legacy OTP
 
-Run the test script to verify the OTP system:
+The old OTP endpoints are still available under `/api/auth/legacy/` for backward compatibility but are deprecated and will be removed in future versions.
 
-```bash
-python test_otp_system.py
-```
-
-This will:
-1. Create a test user
-2. Generate and verify OTPs
-3. Test email template rendering
-4. Demonstrate the complete OTP flow
-
-## Migration
-
-Apply the OTP models migration:
-
-```bash
-python manage.py migrate Authentication
-```
-
-## Environment Variables
-
-Ensure these email settings are configured in your `.env` file:
-
-```env
-DEFAULT_FROM_EMAIL=noreply@yourdomain.com
-EMAIL_HOST=smtp.gmail.com
-EMAIL_PORT=587
-EMAIL_HOST_USER=your-email@gmail.com
-EMAIL_HOST_PASSWORD=your-app-password
-EMAIL_USE_TLS=True
-```
+**Legacy Endpoints:**
+- `/api/auth/legacy/otp/send/`
+- `/api/auth/legacy/otp/verify/`
+- `/api/auth/legacy/otp/resend/`
+- `/api/auth/legacy/login/otp/`
