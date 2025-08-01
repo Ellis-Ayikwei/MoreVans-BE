@@ -146,6 +146,18 @@ class User(AbstractUser):
     def __str__(self):
         return self.email
 
+    @property
+    def requires_verification(self):
+        """
+        Check if user requires email verification.
+        Returns True if user is not active or email is not verified.
+        """
+        # Check if user has verification record
+        if hasattr(self, "verification"):
+            return not self.verification.email_verified
+        # If no verification record exists, assume verification is required
+        return True
+
 
 class Address(Basemodel):
     ADDRESS_TYPES = [("billing", "Billing"), ("shipping", "Shipping"), ("both", "Both")]

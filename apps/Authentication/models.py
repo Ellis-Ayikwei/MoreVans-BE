@@ -38,42 +38,59 @@ class OTP(Basemodel):
         ]
 
     def __str__(self):
-        return f"{self.user.email} - {self.otp_type} - {self.otp_code}"
+        return f"{getattr(self.user, 'email', 'Unknown')} - {self.otp_type} - {self.otp_code}"
 
     @classmethod
     def generate_otp(cls, user, otp_type, validity_minutes=10):
         """Generate a new OTP for the user"""
-        # Invalidate any existing unused OTPs of the same type
-        cls.objects.filter(user=user, otp_type=otp_type, is_used=False).update(
-            is_used=True
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        logger.info(
+            f"[OTP_GEN_DEBUG] Starting OTP generation for user {user.id}, type: {otp_type}"
         )
 
+        # Invalidate any existing unused OTPs of the same type
+        logger.info(
+            f"[OTP_GEN_DEBUG] Invalidating existing unused OTPs for user {user.id}, type: {otp_type}"
+        )
+        existing_otps = cls.objects.filter(user=user, otp_type=otp_type, is_used=False)
+        existing_count = existing_otps.count()
+        logger.info(f"[OTP_GEN_DEBUG] Found {existing_count} existing unused OTPs")
+
+        existing_otps.update(is_used=True)
+        logger.info(f"[OTP_GEN_DEBUG] Marked {existing_count} existing OTPs as used")
+
         # Generate 6-digit OTP
+        logger.info(f"[OTP_GEN_DEBUG] Generating 6-digit OTP code")
         otp_code = "".join(random.choices(string.digits, k=6))
+        logger.info(f"[OTP_GEN_DEBUG] Generated OTP code: {otp_code[:2]}**")
 
         # Create new OTP
+        logger.info(f"[OTP_GEN_DEBUG] Creating new OTP record in database")
+        expires_at = timezone.now() + timedelta(minutes=validity_minutes)
+        logger.info(f"[OTP_GEN_DEBUG] OTP will expire at: {expires_at}")
+
         otp = cls.objects.create(
             user=user,
             otp_code=otp_code,
             otp_type=otp_type,
-            expires_at=timezone.now() + timedelta(minutes=validity_minutes),
+            expires_at=expires_at,
+        )
+
+        logger.info(
+            f"[OTP_GEN_DEBUG] OTP created successfully - ID: {otp.id}, Code: {otp_code[:2]}**, Expires: {otp.expires_at}"
         )
 
         return otp
 
     def is_valid(self):
         """Check if OTP is still valid"""
-        return (
-            not self.is_used
-            and self.expires_at > timezone.now()
-            and self.attempts < self.max_attempts
-        )
+        return not self.is_used and self.expires_at > timezone.now()
 
     def verify(self, otp_code):
-        """Verify the OTP code"""
-        self.attempts += 1
-        self.save()
-
+        """Verify the OTP code (legacy method - now handled in utility)"""
         if not self.is_valid():
             return False
 
@@ -100,4 +117,4 @@ class UserVerification(Basemodel):
         db_table = "user_verifications"
 
     def __str__(self):
-        return f"{self.user.email} - Email: {self.email_verified}, Phone: {self.phone_verified}"
+        return f"{getattr(self.user, 'email', 'Unknown')} - Email: {self.email_verified}, Phone: {self.phone_verified}"

@@ -17,6 +17,12 @@ from .views import (
     LoginWithOTPView,
     MFALoginView,
     VerifyMFALoginView,
+    AdminSendOTPView,
+    AdminVerifyOTPView,
+    AdminResetOTPLimitsView,
+    AdminEmailStatsView,
+    AdminResetGlobalEmailLimitView,
+    AdminOTPDebugLogsView,
 )
 
 
@@ -47,4 +53,21 @@ urlpatterns = [
     # MFA Login endpoints
     path("mfa/login/", MFALoginView.as_view(), name="mfa_login"),
     path("mfa/verify/", VerifyMFALoginView.as_view(), name="verify_mfa_login"),
+    # Admin OTP endpoints
+    path("admin/otp/send/", AdminSendOTPView.as_view(), name="admin_send_otp"),
+    path("admin/otp/verify/", AdminVerifyOTPView.as_view(), name="admin_verify_otp"),
+    path(
+        "admin/otp/reset-limits/",
+        AdminResetOTPLimitsView.as_view(),
+        name="admin_reset_otp_limits",
+    ),
+    # Admin Email Management endpoints
+    path("admin/email/stats/", AdminEmailStatsView.as_view(), name="admin_email_stats"),
+    path(
+        "admin/email/reset-limit/",
+        AdminResetGlobalEmailLimitView.as_view(),
+        name="admin_reset_email_limit",
+    ),
+    # Admin Debug endpoints
+    path("admin/debug/logs/", AdminOTPDebugLogsView.as_view(), name="admin_debug_logs"),
 ]

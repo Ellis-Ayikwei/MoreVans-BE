@@ -1,3 +1,4 @@
+import os
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.core.mail import send_mail
@@ -44,7 +45,14 @@ from .utils import (
     is_account_locked,
     reset_failed_logins,
 )
-from .utils import send_otp_utility, verify_otp_utility
+from .error_handlers import (
+    get_verification_required_response,
+    get_account_locked_response,
+    get_invalid_credentials_response,
+    get_user_not_found_response,
+)
+from .utils import send_otp_utility, verify_otp_utility, OTPValidator
+from .models import OTP
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +72,7 @@ class RegisterAPIView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
+        print("request.data", request.data)
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
@@ -119,13 +128,14 @@ class LoginAPIView(APIView):
             user = serializer.validated_data["user"]
 
             # Check if account requires further verification
-            if hasattr(user, "requires_verification") and user.requires_verification:
-                return Response(
-                    {
-                        "detail": "Account requires verification. Please check your email."
-                    },
-                    status=status.HTTP_403_FORBIDDEN,
-                )
+            # if hasattr(user, "requires_verification") and user.requires_verification:
+            #     return Response(
+            #         {
+            #             "action_required": "VERIFY_EMAIL",
+            #             "detail": "Account requires verification. Please check your email.",
+            #         },
+            #         status=status.HTTP_403_FORBIDDEN,
+            #     )
 
             # Check if account is locked due to too many failed attempts
             if is_account_locked(user.email):
@@ -248,10 +258,9 @@ class PasswordRecoveryAPIView(APIView):
         token = token_generator.make_token(user)
         uidb64 = urlsafe_base64_encode(force_bytes(user.pk))
 
-        # Create reset URL
-        reset_url = request.build_absolute_uri(
-            reverse("password_reset_confirm", kwargs={"uidb64": uidb64, "token": token})
-        )
+        frontend_base_url = os.getenv("FRONTEND_URL")
+        frontend_url = f"{frontend_base_url}/reset-password/{uidb64}/{token}"
+        reset_url = frontend_url
 
         # Send password reset email
         try:
@@ -307,9 +316,14 @@ class PasswordResetConfirmAPIView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request, uidb64, token):
+        print("request data", request.data)
         serializer = PasswordResetConfirmSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        # Get uidb64 and token from the validated data
+        uidb64 = serializer.validated_data["uidb64"]
+        token = serializer.validated_data["token"]
 
         try:
             # Decode user ID
@@ -633,24 +647,46 @@ class VerifyOTPView(APIView):
     throttle_classes = [AnonRateThrottle]
 
     def post(self, request):
-        serializer = MFALoginVerifySerializer(data=request.data)
+        serializer = VerifyOTPSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        email = serializer.validated_data["email"]
+        email = serializer.validated_data.get("email")
+        phone_number = serializer.validated_data.get("phone_number")
         otp_code = serializer.validated_data["otp_code"]
+        otp_type = serializer.validated_data["otp_type"]
 
         try:
-            # Get user by email
-            try:
-                user = User.objects.get(email=email)
-            except User.DoesNotExist:
+            # Get user based on email or phone
+            if email:
+                try:
+                    user = User.objects.get(email=email)
+                except User.DoesNotExist:
+                    return Response(
+                        {
+                            "message": "User not found with this email address.",
+                            "error_code": "USER_NOT_FOUND",
+                        },
+                        status=status.HTTP_404_NOT_FOUND,
+                    )
+            elif phone_number:
+                try:
+                    user = User.objects.get(phone_number=phone_number)
+                except User.DoesNotExist:
+                    return Response(
+                        {
+                            "message": "User not found with this phone number.",
+                            "error_code": "USER_NOT_FOUND",
+                        },
+                        status=status.HTTP_404_NOT_FOUND,
+                    )
+            else:
                 return Response(
                     {
-                        "message": "User not found with this email address.",
-                        "error_code": "USER_NOT_FOUND",
+                        "message": "Either email or phone number is required.",
+                        "error_code": "MISSING_CONTACT",
                     },
-                    status=status.HTTP_404_NOT_FOUND,
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
             # Verify OTP
@@ -781,7 +817,7 @@ class ResendOTPView(APIView):
                         "message": "Please wait before requesting another OTP.",
                         "error_code": "COOLDOWN_ACTIVE",
                     },
-                    status=status.HTTP_400_BAD_REQUEST,
+                    status=status.HTTP_429_TOO_MANY_REQUESTS,
                 )
 
             # Send OTP
@@ -801,13 +837,30 @@ class ResendOTPView(APIView):
                     status=status.HTTP_200_OK,
                 )
             else:
-                return Response(
-                    {
-                        "message": result["message"],
-                        "error_code": result.get("error_code", "UNKNOWN_ERROR"),
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
+                if result["status_code"] == 429:
+                    return Response(
+                        {
+                            "message": result["message"],
+                            "error_code": result.get("error_code", "UNKNOWN_ERROR"),
+                        },
+                        status=status.HTTP_429_TOO_MANY_REQUESTS,
+                    )
+                elif result["status_code"] == 503:
+                    return Response(
+                        {
+                            "message": result["message"],
+                            "error_code": result.get("error_code", "UNKNOWN_ERROR"),
+                        },
+                        status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    )
+                else:
+                    return Response(
+                        {
+                            "message": result["message"],
+                            "error_code": result.get("error_code", "UNKNOWN_ERROR"),
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
         except Exception as e:
             logger.error(f"Error in ResendOTPView: {str(e)}")
@@ -863,12 +916,25 @@ class LoginWithOTPView(APIView):
                         status=status.HTTP_200_OK,
                     )
                 else:
+                    # Return appropriate error status based on error type
+                    error_code = result.get("error_code", "UNKNOWN_ERROR")
+
+                    if (
+                        error_code == "RATE_LIMIT_EXCEEDED"
+                        or error_code == "COOLDOWN_ACTIVE"
+                    ):
+                        status_code = status.HTTP_429_TOO_MANY_REQUESTS
+                    elif error_code == "EMAIL_SEND_FAILED":
+                        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+                    else:
+                        status_code = status.HTTP_400_BAD_REQUEST
+
                     return Response(
                         {
                             "message": result["message"],
-                            "error_code": result.get("error_code", "UNKNOWN_ERROR"),
+                            "error_code": error_code,
                         },
-                        status=status.HTTP_400_BAD_REQUEST,
+                        status=status_code,
                     )
 
             # If verifying OTP
@@ -901,12 +967,27 @@ class LoginWithOTPView(APIView):
 
                     return response
                 else:
+                    # Return appropriate error status based on error type
+                    error_code = result.get("error_code", "UNKNOWN_ERROR")
+
+                    if error_code == "INVALID_FORMAT":
+                        status_code = status.HTTP_400_BAD_REQUEST
+                    elif error_code == "OTP_NOT_FOUND":
+                        status_code = status.HTTP_404_NOT_FOUND
+                    elif error_code == "OTP_EXPIRED":
+                        status_code = status.HTTP_410_GONE
+                    elif error_code == "INVALID_OTP":
+                        status_code = status.HTTP_401_UNAUTHORIZED
+                    else:
+                        status_code = status.HTTP_400_BAD_REQUEST
+
                     return Response(
                         {
                             "message": result["message"],
-                            "error_code": result.get("error_code", "UNKNOWN_ERROR"),
+                            "error_code": error_code,
+                            "remaining_attempts": result.get("remaining_attempts"),
                         },
-                        status=status.HTTP_400_BAD_REQUEST,
+                        status=status_code,
                     )
 
         except Exception as e:
@@ -947,9 +1028,12 @@ class MFALoginView(APIView):
 
             # Check if account requires further verification
             if hasattr(user, "requires_verification") and user.requires_verification:
+                result = send_otp_utility(user, "signup", user.email)
+
                 return Response(
                     {
-                        "detail": "Account requires verification. Please check your email."
+                        "action_required": "VERIFY_EMAIL",
+                        "detail": "Account requires verification. Please check your email.",
                     },
                     status=status.HTTP_403_FORBIDDEN,
                 )
@@ -1088,6 +1172,115 @@ class VerifyMFALoginView(APIView):
 
                 return response
             else:
+                # Return appropriate error status based on error type
+                error_code = result.get("error_code", "UNKNOWN_ERROR")
+
+                if error_code == "INVALID_FORMAT":
+                    status_code = status.HTTP_400_BAD_REQUEST
+                elif error_code == "OTP_NOT_FOUND":
+                    status_code = status.HTTP_404_NOT_FOUND
+                elif error_code == "OTP_EXPIRED":
+                    status_code = status.HTTP_410_GONE
+                elif error_code == "INVALID_OTP":
+                    status_code = status.HTTP_401_UNAUTHORIZED
+                else:
+                    status_code = status.HTTP_400_BAD_REQUEST
+
+                return Response(
+                    {
+                        "message": result["message"],
+                        "error_code": error_code,
+                        "remaining_attempts": result.get("remaining_attempts"),
+                    },
+                    status=status_code,
+                )
+
+        except Exception as e:
+            logger.error(f"Error in VerifyMFALoginView: {str(e)}")
+            return Response(
+                {
+                    "message": "Failed to verify MFA login. Please try again.",
+                    "error_code": "VERIFICATION_FAILED",
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class AdminSendOTPView(APIView):
+    """Admin endpoint to send OTP with override capabilities"""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        # Check if user is admin/staff
+        if not request.user.is_staff:
+            return Response(
+                {
+                    "message": "Only staff members can perform admin OTP operations.",
+                    "error_code": "INSUFFICIENT_PERMISSIONS",
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Validate required fields
+        user_id = request.data.get("user_id")
+        otp_type = request.data.get("otp_type")
+
+        if not user_id or not otp_type:
+            return Response(
+                {
+                    "message": "user_id and otp_type are required.",
+                    "error_code": "MISSING_FIELDS",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            # Get target user
+            try:
+                user = User.objects.get(id=user_id)
+            except User.DoesNotExist:
+                return Response(
+                    {
+                        "message": "User not found.",
+                        "error_code": "USER_NOT_FOUND",
+                    },
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            # Validate OTP type
+            valid_otp_types = [choice[0] for choice in OTP.OTP_TYPES]
+            if otp_type not in valid_otp_types:
+                return Response(
+                    {
+                        "message": f"Invalid OTP type. Valid types: {valid_otp_types}",
+                        "error_code": "INVALID_OTP_TYPE",
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Send OTP with admin override
+            result = send_otp_utility(
+                user=user,
+                otp_type=otp_type,
+                admin_override=True,
+                admin_user=request.user,
+            )
+
+            if result["success"]:
+                return Response(
+                    {
+                        "message": result["message"],
+                        "masked_email": result.get("masked_email"),
+                        "validity_minutes": result.get("validity_minutes"),
+                        "otp_type": otp_type,
+                        "user_id": str(user.id),
+                        "admin_override": True,
+                        "admin_user_id": str(request.user.id),
+                    },
+                    status=status.HTTP_200_OK,
+                )
+            else:
                 return Response(
                     {
                         "message": result["message"],
@@ -1097,11 +1290,447 @@ class VerifyMFALoginView(APIView):
                 )
 
         except Exception as e:
-            logger.error(f"Error in VerifyMFALoginView: {str(e)}")
+            logger.error(f"Error in AdminSendOTPView: {str(e)}")
             return Response(
                 {
-                    "message": "Failed to verify MFA login. Please try again.",
+                    "message": "Failed to send OTP. Please try again.",
+                    "error_code": "SEND_FAILED",
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class AdminVerifyOTPView(APIView):
+    """Admin endpoint to verify OTP with override capabilities"""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        # Check if user is admin/staff
+        if not request.user.is_staff:
+            return Response(
+                {
+                    "message": "Only staff members can perform admin OTP operations.",
+                    "error_code": "INSUFFICIENT_PERMISSIONS",
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Validate required fields
+        user_id = request.data.get("user_id")
+        otp_code = request.data.get("otp_code")
+        otp_type = request.data.get("otp_type")
+
+        if not user_id or not otp_code or not otp_type:
+            return Response(
+                {
+                    "message": "user_id, otp_code, and otp_type are required.",
+                    "error_code": "MISSING_FIELDS",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            # Get target user
+            try:
+                user = User.objects.get(id=user_id)
+            except User.DoesNotExist:
+                return Response(
+                    {
+                        "message": "User not found.",
+                        "error_code": "USER_NOT_FOUND",
+                    },
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            # Validate OTP type
+            valid_otp_types = [choice[0] for choice in OTP.OTP_TYPES]
+            if otp_type not in valid_otp_types:
+                return Response(
+                    {
+                        "message": f"Invalid OTP type. Valid types: {valid_otp_types}",
+                        "error_code": "INVALID_OTP_TYPE",
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Verify OTP with admin override
+            result = verify_otp_utility(
+                user=user,
+                otp_code=otp_code,
+                otp_type=otp_type,
+                admin_override=True,
+                admin_user=request.user,
+            )
+
+            if result["success"]:
+                response_data = {
+                    "message": result["message"],
+                    "action": result.get("action"),
+                    "user_id": str(user.id),
+                    "admin_override": True,
+                    "admin_user_id": str(request.user.id),
+                }
+
+                # Handle different OTP types
+                if otp_type == "signup":
+                    response_data["message"] = (
+                        "Email verified successfully. User account is now active. (Admin Override)"
+                    )
+
+                elif otp_type == "login":
+                    # Generate JWT tokens for login
+                    refresh = RefreshToken.for_user(user)
+                    access_token = str(refresh.access_token)
+                    refresh_token = str(refresh)
+
+                    response_data.update({"user": UserAuthSerializer(user).data})
+
+                    # Create response with user data but no tokens in the body
+                    response = Response(response_data, status=status.HTTP_200_OK)
+
+                    # Add tokens to response headers
+                    response["Authorization"] = f"Bearer {access_token}"
+                    response["X-Refresh-Token"] = refresh_token
+
+                    # Set Access-Control-Expose-Headers to make headers available to JavaScript
+                    response["Access-Control-Expose-Headers"] = (
+                        "Authorization, X-Refresh-Token"
+                    )
+
+                    return response
+
+                return Response(response_data, status=status.HTTP_200_OK)
+            else:
+                return Response(
+                    {
+                        "message": result["message"],
+                        "error_code": result.get("error_code", "UNKNOWN_ERROR"),
+                        "admin_override": True,
+                        "admin_user_id": str(request.user.id),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        except Exception as e:
+            logger.error(f"Error in AdminVerifyOTPView: {str(e)}")
+            return Response(
+                {
+                    "message": "Failed to verify OTP. Please try again.",
                     "error_code": "VERIFICATION_FAILED",
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class AdminResetOTPLimitsView(APIView):
+    """Admin endpoint to reset OTP rate limits for a user"""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        # Check if user is admin/staff
+        if not request.user.is_staff:
+            return Response(
+                {
+                    "message": "Only staff members can perform admin OTP operations.",
+                    "error_code": "INSUFFICIENT_PERMISSIONS",
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        # Validate required fields
+        user_id = request.data.get("user_id")
+        otp_type = request.data.get(
+            "otp_type"
+        )  # Optional, if not provided, reset all types
+
+        if not user_id:
+            return Response(
+                {
+                    "message": "user_id is required.",
+                    "error_code": "MISSING_FIELDS",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            # Get target user
+            try:
+                user = User.objects.get(id=user_id)
+            except User.DoesNotExist:
+                return Response(
+                    {
+                        "message": "User not found.",
+                        "error_code": "USER_NOT_FOUND",
+                    },
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            # Reset rate limits
+            reset_count = 0
+
+            if otp_type:
+                # Reset specific OTP type
+                valid_otp_types = [choice[0] for choice in OTP.OTP_TYPES]
+                if otp_type not in valid_otp_types:
+                    return Response(
+                        {
+                            "message": f"Invalid OTP type. Valid types: {valid_otp_types}",
+                            "error_code": "INVALID_OTP_TYPE",
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                # Reset sending rate limit
+                rate_limit_key = OTPValidator.get_rate_limit_key(user, otp_type)
+                if cache.get(rate_limit_key):
+                    cache.delete(rate_limit_key)
+                    reset_count += 1
+
+                # Reset cooldown
+                cooldown_key = OTPValidator.get_resend_cooldown_key(user, otp_type)
+                if cache.get(cooldown_key):
+                    cache.delete(cooldown_key)
+                    reset_count += 1
+
+                # Reset hourly verification limit
+                hourly_verification_key = OTPValidator.get_hourly_verification_key(
+                    user, otp_type
+                )
+                if cache.get(hourly_verification_key):
+                    cache.delete(hourly_verification_key)
+                    reset_count += 1
+
+                # Reset all OTP verification attempts for this type
+                # This is a bit more complex as we need to find all OTPs for this user and type
+                otps = OTP.objects.filter(user=user, otp_type=otp_type, is_used=False)
+                for otp in otps:
+                    otp_verification_key = OTPValidator.get_otp_verification_key(
+                        user, otp_type, otp.id
+                    )
+                    if cache.get(otp_verification_key):
+                        cache.delete(otp_verification_key)
+                        reset_count += 1
+            else:
+                # Reset all OTP types
+                valid_otp_types = [choice[0] for choice in OTP.OTP_TYPES]
+                for otp_type in valid_otp_types:
+                    # Reset sending rate limit
+                    rate_limit_key = OTPValidator.get_rate_limit_key(user, otp_type)
+                    if cache.get(rate_limit_key):
+                        cache.delete(rate_limit_key)
+                        reset_count += 1
+
+                    # Reset cooldown
+                    cooldown_key = OTPValidator.get_resend_cooldown_key(user, otp_type)
+                    if cache.get(cooldown_key):
+                        cache.delete(cooldown_key)
+                        reset_count += 1
+
+                    # Reset hourly verification limit
+                    hourly_verification_key = OTPValidator.get_hourly_verification_key(
+                        user, otp_type
+                    )
+                    if cache.get(hourly_verification_key):
+                        cache.delete(hourly_verification_key)
+                        reset_count += 1
+
+                    # Reset all OTP verification attempts for this type
+                    otps = OTP.objects.filter(
+                        user=user, otp_type=otp_type, is_used=False
+                    )
+                    for otp in otps:
+                        otp_verification_key = OTPValidator.get_otp_verification_key(
+                            user, otp_type, otp.id
+                        )
+                        if cache.get(otp_verification_key):
+                            cache.delete(otp_verification_key)
+                            reset_count += 1
+
+            # Log the admin action
+            logger.info(
+                f"Admin reset OTP limits: {request.user.email} reset {reset_count} rate limit entries for user {user.email} ({otp_type or 'all types'})"
+            )
+
+            return Response(
+                {
+                    "message": f"Successfully reset {reset_count} rate limit entries for user {user.email}",
+                    "user_id": str(user.id),
+                    "otp_type": otp_type or "all types",
+                    "reset_count": reset_count,
+                    "admin_user_id": str(request.user.id),
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        except Exception as e:
+            logger.error(f"Error in AdminResetOTPLimitsView: {str(e)}")
+            return Response(
+                {
+                    "message": "Failed to reset OTP limits. Please try again.",
+                    "error_code": "RESET_FAILED",
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class AdminEmailStatsView(APIView):
+    """Admin endpoint to view global email sending statistics"""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        # Check if user is admin/staff
+        if not request.user.is_staff:
+            return Response(
+                {
+                    "message": "Only staff members can view email statistics.",
+                    "error_code": "INSUFFICIENT_PERMISSIONS",
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            # Get email statistics
+            stats = OTPValidator.get_global_email_stats()
+
+            return Response(
+                {
+                    "message": "Email statistics retrieved successfully",
+                    "stats": stats,
+                    "admin_user_id": str(request.user.id),
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        except Exception as e:
+            logger.error(f"Error in AdminEmailStatsView: {str(e)}")
+            return Response(
+                {
+                    "message": "Failed to retrieve email statistics.",
+                    "error_code": "STATS_FAILED",
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class AdminResetGlobalEmailLimitView(APIView):
+    """Admin endpoint to reset global email sending limit"""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        # Check if user is admin/staff
+        if not request.user.is_staff:
+            return Response(
+                {
+                    "message": "Only staff members can reset global email limits.",
+                    "error_code": "INSUFFICIENT_PERMISSIONS",
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            # Get current stats before reset
+            stats_before = OTPValidator.get_global_email_stats()
+
+            # Reset global email limit
+            OTPValidator.reset_global_email_limit()
+
+            # Get stats after reset
+            stats_after = OTPValidator.get_global_email_stats()
+
+            # Log the admin action
+            logger.info(
+                f"Admin reset global email limit: {request.user.email} reset global email counter from {stats_before['current_count']} to {stats_after['current_count']}"
+            )
+
+            return Response(
+                {
+                    "message": f"Successfully reset global email limit. Previous count: {stats_before['current_count']}, New count: {stats_after['current_count']}",
+                    "stats_before": stats_before,
+                    "stats_after": stats_after,
+                    "admin_user_id": str(request.user.id),
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        except Exception as e:
+            logger.error(f"Error in AdminResetGlobalEmailLimitView: {str(e)}")
+            return Response(
+                {
+                    "message": "Failed to reset global email limit.",
+                    "error_code": "RESET_FAILED",
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class AdminOTPDebugLogsView(APIView):
+    """Admin endpoint to view recent OTP debug logs"""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        # Check if user is admin/staff
+        if not request.user.is_staff:
+            return Response(
+                {
+                    "message": "Only staff members can view debug logs.",
+                    "error_code": "INSUFFICIENT_PERMISSIONS",
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            # Get query parameters
+            user_id = request.query_params.get("user_id")
+            otp_type = request.query_params.get("otp_type")
+            limit = int(request.query_params.get("limit", 50))
+
+            # This is a simplified log viewer - in production, you might want to use a proper log aggregation service
+            # For now, we'll return a message about how to check logs
+            debug_info = {
+                "message": "Debug logs are written to the application log files",
+                "log_patterns": {
+                    "otp_send": "[OTP_DEBUG]",
+                    "otp_verify": "[VERIFY_DEBUG]",
+                    "otp_generation": "[OTP_GEN_DEBUG]",
+                    "email_send": "[EMAIL_DEBUG]",
+                    "admin_operations": "Admin override:",
+                    "rate_limits": "rate limit",
+                    "global_limits": "Global email limit",
+                },
+                "common_issues": {
+                    "email_not_sent": "Check [EMAIL_DEBUG] logs for SMTP errors",
+                    "otp_not_found": "Check [OTP_GEN_DEBUG] logs for OTP generation",
+                    "rate_limit_issues": "Check [OTP_DEBUG] logs for rate limiting",
+                    "verification_fails": "Check [VERIFY_DEBUG] logs for verification issues",
+                },
+                "log_locations": {
+                    "development": "Console output or log files",
+                    "production": "Application log files (e.g., /var/log/app/)",
+                    "docker": "docker logs <container_name>",
+                },
+                "filters": {
+                    "user_id": user_id,
+                    "otp_type": otp_type,
+                    "limit": limit,
+                },
+            }
+
+            return Response(
+                debug_info,
+                status=status.HTTP_200_OK,
+            )
+
+        except Exception as e:
+            logger.error(f"Error in AdminOTPDebugLogsView: {str(e)}")
+            return Response(
+                {
+                    "message": "Failed to retrieve debug information.",
+                    "error_code": "DEBUG_FAILED",
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )

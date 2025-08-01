@@ -1,4 +1,5 @@
 from django.contrib.auth import authenticate
+from django.utils.translation import gettext as _
 from apps.User.models import User
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
@@ -16,8 +17,8 @@ class RegisterSerializer(serializers.ModelSerializer):
         write_only=True, required=True, validators=[validate_password]
     )
     password2 = serializers.CharField(write_only=True, required=True)
-    # first_name = serializers.CharField(required=True)
-    # last_name = serializers.CharField(required=True)
+    first_name = serializers.CharField(required=True)
+    last_name = serializers.CharField(required=True)
     # phone_number = serializers.CharField(required=False, allow_blank=True)
     # user_type = serializers.ChoiceField(
     #     choices=User.USER_TYPE_CHOICES,
@@ -26,7 +27,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ("email", "password", "password2")
+        fields = ("email", "password", "password2", "first_name", "last_name")
 
     def validate(self, attrs):
         # Check if passwords match
@@ -60,8 +61,8 @@ class RegisterSerializer(serializers.ModelSerializer):
             user = User.objects.create_user(
                 email=validated_data["email"],
                 password=validated_data["password"],
-                # first_name=validated_data.get('first_name', ''),
-                # last_name=validated_data.get('last_name', ''),
+                first_name=validated_data.get("first_name", ""),
+                last_name=validated_data.get("last_name", ""),
                 # phone_number=validated_data.get('phone_number', ''),
                 # user_type=validated_data.get('user_type', 'customer')
             )
