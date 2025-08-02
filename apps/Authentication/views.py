@@ -24,6 +24,7 @@ from rest_framework_simplejwt.exceptions import (
 )
 from django.core.cache import cache
 from django.utils import timezone
+from datetime import timezone as dt_timezone
 import logging
 
 from .serializer import (
@@ -52,7 +53,7 @@ from .error_handlers import (
     get_user_not_found_response,
 )
 from .utils import send_otp_utility, verify_otp_utility, OTPValidator
-from .models import OTP
+from .models import OTP, UserVerification
 
 logger = logging.getLogger(__name__)
 
@@ -255,7 +256,7 @@ class LogoutAPIView(APIView):
                 token=token,
                 user_id=token_data.get("user_id"),
                 expires_at=timezone.datetime.fromtimestamp(
-                    token_data.get("exp"), tz=timezone.utc
+                    token_data.get("exp"), tz=dt_timezone.utc
                 ),
             )
 
