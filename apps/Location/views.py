@@ -14,6 +14,7 @@ from rest_framework.views import APIView
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 import re
+from .services import PostcodeValidationService
 
 logger = logging.getLogger(__name__)
 
@@ -1236,3 +1237,47 @@ def simple_postcode_addresses(request):
             f"Error in simple postcode address lookup: {str(e)}", exc_info=True
         )
         return JsonResponse({"error": f"Address lookup failed: {str(e)}"}, status=500)
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def validate_postcode_comprehensive(request, postcode):
+    """
+    Comprehensive postcode validation using multiple sources
+    """
+    try:
+        service = PostcodeValidationService()
+        result = service.validate_postcode(postcode)
+
+        return Response(result)
+
+    except Exception as e:
+        logger.error(
+            f"Error in comprehensive postcode validation: {str(e)}", exc_info=True
+        )
+        return Response(
+            {"error": "Postcode validation failed"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def get_postcode_addresses_comprehensive(request, postcode):
+    """
+    Get all available addresses for a postcode using multiple sources
+    """
+    try:
+        service = PostcodeValidationService()
+        result = service.get_addresses_for_postcode(postcode)
+
+        return Response(result)
+
+    except Exception as e:
+        logger.error(
+            f"Error in comprehensive postcode address lookup: {str(e)}", exc_info=True
+        )
+        return Response(
+            {"error": "Address lookup failed"},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )

@@ -61,7 +61,9 @@ class ServiceProvider(Basemodel):
 
     # --- Service Offerings ---
     service_categories = models.ManyToManyField(
-        ServiceCategory, related_name="providers", verbose_name=_("Service Categories")
+        ServiceCategory,
+        related_name="service_providers",
+        verbose_name=_("Service Categories"),
     )
 
     specializations = models.ManyToManyField(
@@ -100,12 +102,18 @@ class ServiceProvider(Basemodel):
     payment_methods = models.ManyToManyField(
         "Payment.PaymentMethod",
         blank=True,
-        related_name="providers",
+        related_name="service_providers",
     )
 
     # --- Operational Preferences ---
     minimum_job_value = models.DecimalField(
         max_digits=8, decimal_places=2, null=True, blank=True
+    )
+
+    services_offered = models.ManyToManyField(
+        "Services.Services",
+        blank=True,
+        related_name="service_providers",
     )
 
     # --- Verification & Compliance ---
@@ -473,3 +481,182 @@ class ServiceProviderThrough(Basemodel):
 #         VATNumber(value)
 #     except InvalidVATNumber:
 #         raise ValidationError("Invalid VAT Number")
+
+
+class ServiceProviderAddress(Basemodel):
+    """Address details for service providers - supports home, business, and non-UK addresses"""
+
+    ADDRESS_TYPES = [
+        ("home", _("Home Address")),
+        ("business", _("Business Address")),
+        ("non_uk", _("Non-UK Address")),
+        ("registered", _("Registered Business Address")),
+        ("operational", _("Operational Address")),
+        ("billing", _("Billing Address")),
+        ("correspondence", _("Correspondence Address")),
+    ]
+
+    provider = models.ForeignKey(
+        ServiceProvider, on_delete=models.CASCADE, related_name="addresses"
+    )
+    address_type = models.CharField(
+        max_length=20, choices=ADDRESS_TYPES, default="home"
+    )
+
+    # Standard address fields
+    address_line_1 = models.CharField(
+        max_length=255,
+        verbose_name=_("Address Line 1"),
+        help_text=_("Street address, building number, etc."),
+    )
+    address_line_2 = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name=_("Address Line 2"),
+        help_text=_("Apartment, suite, unit, etc."),
+    )
+    city = models.CharField(
+        max_length=100, verbose_name=_("City"), help_text=_("City or town")
+    )
+    postcode = models.CharField(
+        max_length=20, verbose_name=_("Postcode"), help_text=_("Postal/ZIP code")
+    )
+    state = models.CharField(
+        max_length=100, blank=True, verbose_name=_("State/County/Province")
+    )
+    country = models.CharField(
+        max_length=100,
+        default="United Kingdom",
+        verbose_name=_("Country"),
+        help_text=_("Country"),
+    )
+
+    # Additional fields for business addresses
+    business_name = models.CharField(
+        max_length=200,
+        blank=True,
+        verbose_name=_("Business Name"),
+        help_text=_("Business name for this address"),
+    )
+
+    # Address verification and status
+    is_primary = models.BooleanField(
+        default=False, help_text=_("Mark as primary address for this provider")
+    )
+    is_verified = models.BooleanField(
+        default=False, help_text=_("Address has been verified")
+    )
+    is_active = models.BooleanField(
+        default=True, help_text=_("Address is currently active")
+    )
+
+    # Verification details
+    verification_date = models.DateTimeField(
+        null=True, blank=True, help_text=_("Date when address was verified")
+    )
+    verification_method = models.CharField(
+        max_length=50,
+        blank=True,
+        choices=[
+            ("postcode_lookup", _("Postcode Lookup")),
+            ("manual_verification", _("Manual Verification")),
+            ("document_upload", _("Document Upload")),
+            ("third_party", _("Third Party Verification")),
+        ],
+        help_text=_("Method used to verify this address"),
+    )
+
+    # Additional metadata
+    notes = models.TextField(
+        blank=True, help_text=_("Additional notes about this address")
+    )
+
+    class Meta:
+        db_table = "service_provider_address"
+        managed = True
+        verbose_name = _("Service Provider Address")
+        verbose_name_plural = _("Service Provider Addresses")
+        ordering = ["-is_primary", "address_type", "city"]
+        unique_together = [
+            "provider",
+            "address_type",
+            "address_line_1",
+            "city",
+            "postcode",
+        ]
+        indexes = [
+            models.Index(fields=["address_type"]),
+            models.Index(fields=["is_primary"]),
+            models.Index(fields=["is_verified"]),
+            models.Index(fields=["country"]),
+        ]
+
+    def __str__(self):
+        address_type_display = self.get_address_type_display()
+        if self.business_name:
+            return f"{self.business_name} - {address_type_display} ({self.city}, {self.postcode})"
+        return f"{self.provider.company_name} - {address_type_display} ({self.city}, {self.postcode})"
+
+    def clean(self):
+        """Validate address data"""
+        # Ensure only one primary address per provider
+        if self.is_primary:
+            existing_primary = ServiceProviderAddress.objects.filter(
+                provider=self.provider, is_primary=True
+            ).exclude(pk=self.pk)
+
+            if existing_primary.exists():
+                raise ValidationError(
+                    f"Provider already has a primary address. "
+                    f"Please uncheck primary for address: {existing_primary.first()}"
+                )
+
+        # Validate UK postcode format if country is UK
+        if self.country.lower() in [
+            "united kingdom",
+            "uk",
+            "great britain",
+            "england",
+            "scotland",
+            "wales",
+            "northern ireland",
+        ]:
+            import re
+
+            # uk_postcode_pattern = r"^[A-Z]{1,2}[0-9][A-Z0-9]? ?[0-9][A-Z]{2}$"
+            # if not re.match(uk_postcode_pattern, self.postcode.upper()):
+            #     raise ValidationError("Invalid UK postcode format")
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        # Auto-verify if using postcode lookup
+        if self.verification_method == "postcode_lookup" and not self.is_verified:
+            self.is_verified = True
+            self.verification_date = timezone.now()
+        super().save(*args, **kwargs)
+
+    @property
+    def full_address(self):
+        """Returns the complete formatted address"""
+        parts = [self.address_line_1]
+        if self.address_line_2:
+            parts.append(self.address_line_2)
+        parts.extend([self.city, self.postcode])
+        if self.state:
+            parts.append(self.state)
+        parts.append(self.country)
+        return ", ".join(filter(None, parts))
+
+    @property
+    def is_uk_address(self):
+        """Check if this is a UK address"""
+        uk_countries = [
+            "united kingdom",
+            "uk",
+            "great britain",
+            "england",
+            "scotland",
+            "wales",
+            "northern ireland",
+        ]
+        return self.country.lower() in uk_countries

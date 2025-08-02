@@ -8,6 +8,7 @@ from .views import (
     PasswordRecoveryAPIView,
     PasswordResetConfirmAPIView,
     RegisterAPIView,
+    RegisterProviderAPIView,
     TokenRefreshView,
     TokenVerifyView,
     UserViewSet,
@@ -34,6 +35,11 @@ urlpatterns = [
     path("", include(router.urls)),
     # Authentication endpoints
     path("register/", RegisterAPIView.as_view(), name="register"),
+    path(
+        "register/provider/",
+        RegisterProviderAPIView.as_view(),
+        name="register_provider",
+    ),
     path("login/", LoginAPIView.as_view(), name="token_obtain_pair"),
     path("logout/", LogoutAPIView.as_view(), name="logout"),
     path("forget_password/", PasswordRecoveryAPIView.as_view(), name="forget_password"),

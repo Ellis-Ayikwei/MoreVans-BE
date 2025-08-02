@@ -2,12 +2,31 @@ from django.contrib.auth import authenticate
 from django.utils.translation import gettext as _
 from apps.User.models import User
 from rest_framework import serializers
+from rest_framework.exceptions import APIException
+from rest_framework import status
 from django.contrib.auth.password_validation import validate_password
 from django.db import IntegrityError
 from django.db.models import Q
 import logging
 from .models import UserVerification, OTP
 from .utils import mask_email, mask_phone, OTPValidator
+
+
+class EmailAlreadyExistsException(APIException):
+    """Custom exception for email already exists with 409 status code"""
+
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = "User with this email already exists"
+    default_code = "email_already_exists"
+
+
+class PhoneNumberAlreadyExistsException(APIException):
+    """Custom exception for phone number already exists with 409 status code"""
+
+    status_code = status.HTTP_409_CONFLICT
+    default_detail = "User with this phone number already exists"
+    default_code = "phone_number_already_exists"
+
 
 logger = logging.getLogger(__name__)
 
@@ -39,16 +58,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         # Check if user with email already exists
         email = attrs.get("email")
         if email and User.objects.filter(email__iexact=email).exists():
-            raise serializers.ValidationError(
-                {"email": "User with this email already exists."}
-            )
+            raise EmailAlreadyExistsException()
 
         # Check if user with phone number already exists (if provided)
         phone_number = attrs.get("phone_number")
         if phone_number and User.objects.filter(phone_number=phone_number).exists():
-            raise serializers.ValidationError(
-                {"phone_number": "User with this phone number already exists."}
-            )
+            raise PhoneNumberAlreadyExistsException()
 
         return attrs
 
@@ -59,7 +74,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 
             # Create user with all provided fields
             user = User.objects.create_user(
-                email=validated_data["email"],
+                email=validated_data["email"].lower().strip(),
                 password=validated_data["password"],
                 first_name=validated_data.get("first_name", ""),
                 last_name=validated_data.get("last_name", ""),
@@ -82,16 +97,12 @@ class RegisterSerializer(serializers.ModelSerializer):
             # Handle case where a race condition might occur
             # (e.g., two users registering with the same email simultaneously)
             if "unique constraint" in str(e).lower() and "email" in str(e).lower():
-                raise serializers.ValidationError(
-                    {"email": "User with this email already exists."}
-                )
+                raise EmailAlreadyExistsException()
             elif (
                 "unique constraint" in str(e).lower()
                 and "phone_number" in str(e).lower()
             ):
-                raise serializers.ValidationError(
-                    {"phone_number": "User with this phone number already exists."}
-                )
+                raise PhoneNumberAlreadyExistsException()
             raise serializers.ValidationError(
                 {"detail": "Registration failed due to database constraint."}
             )

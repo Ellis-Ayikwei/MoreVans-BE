@@ -73,34 +73,73 @@ class RegisterAPIView(APIView):
 
     def post(self, request):
         print("request.data", request.data)
-        serializer = RegisterSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save()
 
-            # Generate and send OTP for email verification using custom OTP utility
-            otp_result = send_otp_utility(user, "signup", user.email)
+        try:
+            serializer = RegisterSerializer(data=request.data)
+            if serializer.is_valid():
+                user = serializer.save()
 
-            if otp_result["success"]:
+                # Generate and send OTP for email verification using custom OTP utility
+                otp_result = send_otp_utility(user, "signup", user.email)
+
+                if otp_result["success"]:
+                    return Response(
+                        {
+                            "message": "User created successfully. Please check your email for verification code.",
+                            "email": otp_result.get("masked_email"),
+                            "user_id": str(user.id),
+                            "otp_sent": True,
+                        },
+                        status=status.HTTP_201_CREATED,
+                    )
+                else:
+                    return Response(
+                        {
+                            "message": "User created but failed to send verification email. Please request a new OTP.",
+                            "user_id": str(user.id),
+                            "otp_sent": False,
+                            "error": otp_result.get("message"),
+                        },
+                        status=status.HTTP_201_CREATED,
+                    )
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            logger.error(f"User registration error: {str(e)}")
+
+            # Import custom exceptions
+            from apps.Authentication.serializer import (
+                EmailAlreadyExistsException,
+                PhoneNumberAlreadyExistsException,
+            )
+
+            # Handle specific conflict exceptions
+            if isinstance(e, EmailAlreadyExistsException):
                 return Response(
                     {
-                        "message": "User created successfully. Please check your email for verification code.",
-                        "email": otp_result.get("masked_email"),
-                        "user_id": str(user.id),
-                        "otp_sent": True,
+                        "message": "User with this email already exists",
+                        "error": "email_already_exists",
+                        "detail": str(e.detail),
                     },
-                    status=status.HTTP_201_CREATED,
+                    status=status.HTTP_409_CONFLICT,
+                )
+            elif isinstance(e, PhoneNumberAlreadyExistsException):
+                return Response(
+                    {
+                        "message": "User with this phone number already exists",
+                        "error": "phone_number_already_exists",
+                        "detail": str(e.detail),
+                    },
+                    status=status.HTTP_409_CONFLICT,
                 )
             else:
                 return Response(
                     {
-                        "message": "User created but failed to send verification email. Please request a new OTP.",
-                        "user_id": str(user.id),
-                        "otp_sent": False,
-                        "error": otp_result.get("message"),
+                        "message": "An error occurred during registration. Please try again.",
+                        "error": str(e),
                     },
-                    status=status.HTTP_201_CREATED,
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class LoginAPIView(APIView):
@@ -1734,3 +1773,175 @@ class AdminOTPDebugLogsView(APIView):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class RegisterProviderAPIView(APIView):
+    """API endpoint for provider registration"""
+
+    permission_classes = [permissions.AllowAny]
+    throttle_classes = [AnonRateThrottle]
+
+    def post(self, request):
+        """
+        Register a new provider with user, provider profile, and addresses
+
+        Expected data format:
+        {
+            "first_name": "John",
+            "last_name": "Doe",
+            "email": "john@example.com",
+            "password": "securepassword",
+            "confirm_password": "securepassword",
+            "username": "johndoe",
+            "mobile_number": "1234567890",
+            "phone_number": "1234567890",
+            "business_name": "John's Transport",
+            "business_type": "limited",
+            "vat_registered": "yes",
+            "number_of_vehicles": "2-5",
+            "work_types": ["Home removals", "Parcel delivery"],
+            "address_line_1": "123 Main St",
+            "address_line_2": "Apt 4B",
+            "city": "London",
+            "postcode": "SW1A 1AA",
+            "country": "United Kingdom",
+            "has_separate_business_address": true,
+            "business_address_line_1": "456 Business Ave",
+            "business_city": "London",
+            "business_postcode": "SW1A 2BB",
+            "business_country": "United Kingdom",
+            "has_non_uk_address": false,
+            "accepted_privacy_policy": true
+        }
+        """
+        print("request data", request.data)
+        try:
+            from apps.Provider.serializer import ProviderRegistrationSerializer
+
+            serializer = ProviderRegistrationSerializer(data=request.data)
+            if serializer.is_valid():
+                # Create user, provider, and addresses in transaction
+                result = serializer.save()
+
+                logger.info(
+                    f"Provider registration successful: User ID {result['user'].id}, Provider ID {result['provider'].id}"
+                )
+
+                # Process work types after transaction (to avoid transaction issues)
+                if result.get("work_types"):
+                    try:
+                        from apps.Provider.serializer import (
+                            ProviderRegistrationSerializer,
+                        )
+
+                        ProviderRegistrationSerializer._process_work_types(
+                            ProviderRegistrationSerializer(),
+                            result["provider"],
+                            result["work_types"],
+                        )
+                        logger.info(
+                            f"Work types processed successfully for provider {result['provider'].id}"
+                        )
+                    except Exception as e:
+                        logger.error(f"Error processing work types: {str(e)}")
+                        # Don't fail the registration, just log the error
+
+                # Force a fresh database query to ensure user is committed
+                from apps.User.models import User
+                from django.db import transaction
+
+                # Use a new transaction to verify the user exists
+                with transaction.atomic():
+                    try:
+                        user = User.objects.select_for_update().get(
+                            id=result["user"].id
+                        )
+                        logger.info(f"User verified in database: {user.email}")
+                    except User.DoesNotExist:
+                        logger.error(
+                            f"User not found in database after transaction: {result['user'].id}"
+                        )
+                        return Response(
+                            {
+                                "message": "Registration completed but user verification failed. Please contact support.",
+                                "error": "User not found in database",
+                            },
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        )
+
+                # Send OTP for email verification after transaction is committed
+                try:
+                    from .utils import send_otp_utility
+
+                    # Double-check user exists before sending OTP
+                    logger.info(f"About to send OTP for user: {user.id} ({user.email})")
+
+                    # Force a database refresh
+                    user.refresh_from_db()
+                    logger.info(
+                        f"User refreshed from database: {user.id} ({user.email})"
+                    )
+
+                    otp_result = send_otp_utility(user, "signup", user.email)
+
+                    return Response(
+                        {
+                            "message": "Provider registration successful. Please check your email for verification.",
+                            "user_id": user.id,
+                            "provider_id": result["provider"].id,
+                            "email": user.email,
+                            "status": "pending_verification",
+                        },
+                        status=status.HTTP_201_CREATED,
+                    )
+
+                except Exception as e:
+                    logger.error(
+                        f"Error sending OTP after provider registration: {str(e)}"
+                    )
+                    # Registration succeeded but OTP failed - return success with warning
+                    return Response(
+                        {
+                            "message": "Provider registration successful but verification email could not be sent. Please contact support.",
+                            "user_id": user.id,
+                            "provider_id": result["provider"].id,
+                            "email": user.email,
+                            "status": "registered_no_otp",
+                            "warning": "Email verification not sent",
+                            "otp_error": str(e),
+                        },
+                        status=status.HTTP_201_CREATED,
+                    )
+            else:
+                return Response(
+                    {
+                        "message": "Registration failed. Please check the provided information.",
+                        "errors": serializer.errors,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        except Exception as e:
+            logger.error(f"Provider registration error: {str(e)}")
+
+            # Import custom exceptions
+            from apps.Provider.serializer import EmailAlreadyExistsException
+
+            # Handle specific conflict exceptions
+            if isinstance(e, EmailAlreadyExistsException):
+                return Response(
+                    {
+                        "message": "Email address is already registered",
+                        "error": "email_already_exists",
+                        "detail": str(e.detail),
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+            else:
+                return Response(
+                    {
+                        "message": "An error occurred during registration. Please try again.",
+                        "error": str(e),
+                    },
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )

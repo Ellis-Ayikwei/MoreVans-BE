@@ -50,4 +50,15 @@ urlpatterns = [
         views.postcode_address_lookup_enhanced,
         name="postcode_address_lookup_enhanced",
     ),
+    # Comprehensive postcode validation endpoints
+    path(
+        "locations/validate-postcode-comprehensive/<str:postcode>/",
+        views.validate_postcode_comprehensive,
+        name="validate_postcode_comprehensive",
+    ),
+    path(
+        "locations/postcode-addresses-comprehensive/<str:postcode>/",
+        views.get_postcode_addresses_comprehensive,
+        name="get_postcode_addresses_comprehensive",
+    ),
 ]
