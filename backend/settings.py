@@ -346,18 +346,27 @@ EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() == "true"
 
+# --- SendGrid Email Configuration ----
+# Use SendGrid Web API instead of SMTP for better reliability
+EMAIL_BACKEND = "sendgrid_backend.SendgridBackend"
+SENDGRID_API_KEY = os.getenv("SENDGRID_API_KEY")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "noreply@morevans.com")
+SENDGRID_TRACK_CLICKS_PLAIN = False
+SENDGRID_TRACK_CLICKS_HTML = False
+SENDGRID_TRACK_OPENS = False
+
+# Disable sandbox mode for production (emails will be delivered)
+SENDGRID_SANDBOX_MODE_IN_DEBUG = False
+SENDGRID_ECHO_TO_STDOUT = DEBUG  # Only echo to stdout in debug mode
+
 # Print email configuration for debugging
-print("=== Email Configuration ===")
-print("SECRET_KEY", SECRET_KEY)
+print("=== SendGrid Email Configuration ===")
 print(f"DEFAULT_FROM_EMAIL: {DEFAULT_FROM_EMAIL}")
-print(f"EMAIL_HOST: {EMAIL_HOST}")
-print(f"EMAIL_PORT: {EMAIL_PORT}")
-print(f"EMAIL_HOST_USER: {EMAIL_HOST_USER}")
 print(
-    f"EMAIL_HOST_PASSWORD: {'*' * len(EMAIL_HOST_PASSWORD) if EMAIL_HOST_PASSWORD else 'None'}"
+    f"SENDGRID_API_KEY: {'*' * len(SENDGRID_API_KEY) if SENDGRID_API_KEY else 'None'}"
 )
-print(f"EMAIL_USE_TLS: {EMAIL_USE_TLS}")
-print("=========================")
+print(f"EMAIL_BACKEND: {EMAIL_BACKEND}")
+print("===================================")
 
 
 APPEND_SLASH = False

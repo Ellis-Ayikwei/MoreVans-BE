@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Check environment variables and settings
+Check environment variables and SendGrid settings
 """
 
 import os
@@ -20,50 +20,58 @@ from django.conf import settings
 
 
 def check_environment():
-    """Check environment variables and settings"""
+    """Check environment variables and settings for SendGrid"""
 
-    print("=== Environment Variables ===")
-    email_vars = [
-        "EMAIL_HOST_PASSWORD",
-        "EMAIL_HOST_USER",
-        "EMAIL_HOST",
-        "EMAIL_PORT",
-        "EMAIL_USE_TLS",
+    print("=== SendGrid Environment Variables ===")
+    sendgrid_vars = [
+        "SENDGRID_API_KEY",
         "DEFAULT_FROM_EMAIL",
     ]
 
-    for var in email_vars:
+    for var in sendgrid_vars:
         value = os.getenv(var)
-        if var == "EMAIL_HOST_PASSWORD" and value:
+        if var == "SENDGRID_API_KEY" and value:
             print(f"{var}: {'*' * len(value)}")
         else:
             print(f"{var}: {value}")
 
-    print("\n=== Django Settings ===")
+    print("\n=== Django SendGrid Settings ===")
     print(f"EMAIL_BACKEND: {getattr(settings, 'EMAIL_BACKEND', 'Not set')}")
     print(f"DEFAULT_FROM_EMAIL: {getattr(settings, 'DEFAULT_FROM_EMAIL', 'Not set')}")
-    print(f"EMAIL_HOST: {getattr(settings, 'EMAIL_HOST', 'Not set')}")
-    print(f"EMAIL_PORT: {getattr(settings, 'EMAIL_PORT', 'Not set')}")
-    print(f"EMAIL_HOST_USER: {getattr(settings, 'EMAIL_HOST_USER', 'Not set')}")
     print(
-        f"EMAIL_HOST_PASSWORD: {'*' * len(getattr(settings, 'EMAIL_HOST_PASSWORD', '')) if getattr(settings, 'EMAIL_HOST_PASSWORD', None) else 'None'}"
+        f"SENDGRID_API_KEY: {'*' * len(getattr(settings, 'SENDGRID_API_KEY', '')) if getattr(settings, 'SENDGRID_API_KEY', None) else 'None'}"
     )
-    print(f"EMAIL_USE_TLS: {getattr(settings, 'EMAIL_USE_TLS', 'Not set')}")
+    print(
+        f"SENDGRID_SANDBOX_MODE_IN_DEBUG: {getattr(settings, 'SENDGRID_SANDBOX_MODE_IN_DEBUG', 'Not set')}"
+    )
 
     print("\n=== Recommendations ===")
-    if not os.getenv("EMAIL_HOST_PASSWORD"):
-        print("❌ EMAIL_HOST_PASSWORD not set")
+    if not os.getenv("SENDGRID_API_KEY"):
+        print("❌ SENDGRID_API_KEY not set")
         print("   Create a .env file with:")
-        print("   EMAIL_HOST_PASSWORD=your_app_password_here")
+        print("   SENDGRID_API_KEY=your_sendgrid_api_key_here")
+        print("   DEFAULT_FROM_EMAIL=noreply@morevans.com")
     else:
-        print("✅ EMAIL_HOST_PASSWORD is set")
+        print("✅ SENDGRID_API_KEY is set")
 
-    if not os.getenv("EMAIL_HOST_USER"):
-        print("❌ EMAIL_HOST_USER not set")
-        print("   Add to .env file:")
-        print("   EMAIL_HOST_USER=ellisarmahayikwei@gmail.com")
+    if not os.getenv("DEFAULT_FROM_EMAIL"):
+        print("❌ DEFAULT_FROM_EMAIL not set")
+        print("   Add to your .env file:")
+        print("   DEFAULT_FROM_EMAIL=noreply@morevans.com")
     else:
-        print("✅ EMAIL_HOST_USER is set")
+        print("✅ DEFAULT_FROM_EMAIL is set")
+
+    # Check for conflicting SMTP variables
+    smtp_vars = ["EMAIL_HOST", "EMAIL_PORT", "EMAIL_HOST_USER", "EMAIL_HOST_PASSWORD"]
+    smtp_found = any(os.getenv(var) for var in smtp_vars)
+
+    if smtp_found:
+        print("\n⚠️  WARNING: SMTP environment variables detected!")
+        print("   These might conflict with SendGrid configuration:")
+        for var in smtp_vars:
+            if os.getenv(var):
+                print(f"   - {var}")
+        print("   Consider removing these from your .env file")
 
 
 if __name__ == "__main__":
