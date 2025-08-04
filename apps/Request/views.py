@@ -60,6 +60,20 @@ class RequestViewSet(viewsets.ModelViewSet):
 
         return queryset
 
+    @action(detail=False, methods=["get"])
+    def drafts(self, request):
+        """Get all draft requests for a user"""
+        user_id = request.query_params.get("user_id")
+        if not user_id:
+            return Response(
+                {"detail": "user_id parameter is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        drafts = Request.objects.filter(user_id=user_id, status="draft")
+        serializer = self.get_serializer(drafts, many=True)
+        return Response(serializer.data)
+
     @action(detail=True, methods=["post"])
     def submit(self, request, pk=None):
         """Submit a draft request for processing"""
@@ -774,11 +788,14 @@ class RequestViewSet(viewsets.ModelViewSet):
             from datetime import datetime
 
             selected_date = datetime.strptime(selected_date, "%Y-%m-%d").date()
+            # Calculate the base price using our pricing function
+            base_price = req.calculate_base_price()
 
             # Update the request with the accepted price and staff count
             req.final_price = price
             req.staff_required = staff_count
             req.preferred_pickup_date = selected_date
+            req.base_price = base_price
             req.status = "accepted"
             req.save()
 
@@ -1019,5 +1036,165 @@ class RequestViewSet(viewsets.ModelViewSet):
                     "error": error_message,
                     "message": "Failed to complete reconciliation",
                 },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    @action(detail=True, methods=["post"])
+    def create_job_from_payments(self, request, pk=None):
+        """
+        Manually create a job from completed payments for this request
+
+        POST /api/requests/{request_id}/create_job_from_payments/
+        """
+        request_obj = self.get_object()
+
+        try:
+            job = request_obj.get_or_create_job_from_payments()
+
+            if job:
+                from apps.Job.serializers import JobSerializer
+
+                job_serializer = JobSerializer(job)
+
+                return Response(
+                    {
+                        "success": True,
+                        "message": f"Job created successfully for request {request_obj.id}",
+                        "job": job_serializer.data,
+                        "request_status": request_obj.status,
+                        "payment_status": request_obj.payment_status,
+                    },
+                    status=status.HTTP_201_CREATED,
+                )
+            else:
+                return Response(
+                    {
+                        "success": False,
+                        "message": "No completed payments found for this request",
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        except Exception as e:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(
+                f"Error creating job from payments for request {request_obj.id}: {str(e)}"
+            )
+
+            return Response(
+                {"success": False, "error": f"Failed to create job: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    @action(detail=False, methods=["post"])
+    def bulk_create_jobs_from_payments(self, request):
+        """
+        Bulk create jobs from payments for multiple requests
+
+        POST /api/requests/bulk_create_jobs_from_payments/
+        {
+            "request_ids": [1, 2, 3],  // optional - if not provided, processes all requests with completed payments
+            "force_create": false       // optional - force create even if job exists
+        }
+        """
+        from apps.Payment.models import Payment
+        from apps.Job.models import Job
+
+        request_ids = request.data.get("request_ids", [])
+        force_create = request.data.get("force_create", False)
+
+        try:
+            # Get requests to process
+            if request_ids:
+                requests_to_process = Request.objects.filter(id__in=request_ids)
+            else:
+                # Get all requests that have completed payments but no jobs
+                requests_with_payments = Request.objects.filter(
+                    payments__status="completed"
+                ).distinct()
+
+                requests_to_process = []
+                for req in requests_with_payments:
+                    if not Job.objects.filter(request=req).exists():
+                        requests_to_process.append(req)
+
+            results = []
+            jobs_created = 0
+            errors = 0
+
+            for request_obj in requests_to_process:
+                try:
+                    # Check if job already exists
+                    existing_job = Job.objects.filter(request=request_obj).first()
+
+                    if existing_job and not force_create:
+                        results.append(
+                            {
+                                "request_id": request_obj.id,
+                                "success": False,
+                                "message": "Job already exists",
+                                "existing_job_id": existing_job.id,
+                            }
+                        )
+                        continue
+
+                    # Create job
+                    job = request_obj.get_or_create_job_from_payments()
+
+                    if job:
+                        jobs_created += 1
+                        results.append(
+                            {
+                                "request_id": request_obj.id,
+                                "success": True,
+                                "job_id": job.id,
+                                "job_number": job.job_number,
+                                "message": "Job created successfully",
+                            }
+                        )
+                    else:
+                        errors += 1
+                        results.append(
+                            {
+                                "request_id": request_obj.id,
+                                "success": False,
+                                "message": "No completed payments found",
+                            }
+                        )
+
+                except Exception as e:
+                    errors += 1
+                    results.append(
+                        {
+                            "request_id": request_obj.id,
+                            "success": False,
+                            "error": str(e),
+                        }
+                    )
+
+            return Response(
+                {
+                    "success": True,
+                    "summary": {
+                        "total_requests_processed": len(requests_to_process),
+                        "jobs_created": jobs_created,
+                        "errors": errors,
+                    },
+                    "results": results,
+                    "message": f"Bulk job creation completed: {jobs_created} jobs created, {errors} errors",
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        except Exception as e:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error in bulk job creation: {str(e)}")
+
+            return Response(
+                {"success": False, "error": f"Bulk job creation failed: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )

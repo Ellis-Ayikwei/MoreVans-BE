@@ -241,6 +241,46 @@ class DriverViewSet(viewsets.ModelViewSet):
                 {"detail": "Document not found."}, status=status.HTTP_404_NOT_FOUND
             )
 
+    @action(detail=True, methods=["post"])
+    def verify_driver(self, request, pk=None):
+        """
+        Manually verify a driver.
+        """
+        driver = self.get_object()
+        notes = request.data.get("notes", "")
+
+        driver.verify_driver(notes=notes)
+        serializer = self.get_serializer(driver)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["post"])
+    def reject_verification(self, request, pk=None):
+        """
+        Reject driver verification.
+        """
+        driver = self.get_object()
+        notes = request.data.get("notes", "")
+
+        if not notes:
+            return Response(
+                {"detail": "Notes are required when rejecting verification."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        driver.reject_verification(notes=notes)
+        serializer = self.get_serializer(driver)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["post"])
+    def update_verification_status(self, request, pk=None):
+        """
+        Update driver verification status based on document verification.
+        """
+        driver = self.get_object()
+        driver.update_verification_status()
+        serializer = self.get_serializer(driver)
+        return Response(serializer.data)
+
 
 class DriverLocationViewSet(viewsets.ModelViewSet):
     """

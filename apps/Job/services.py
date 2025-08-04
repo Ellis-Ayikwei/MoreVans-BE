@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import Enum
 from datetime import datetime, timedelta
 import logging
+from decimal import Decimal
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -135,7 +136,7 @@ class DemandAnalyzer:
         weekend_factor = 1.3 if weekday >= 5 else 1.0  # Weekend premium
 
         # Time urgency
-        days_ahead = (pickup_date - datetime.now().date()).days
+        days_ahead = (pickup_date - timezone.now().date()).days
         urgency_factor = 1.0
         if days_ahead <= 1:
             urgency_factor = 1.4  # Same/next day high demand
@@ -565,3 +566,368 @@ class JobTimelineService:
             metadata=metadata,
             created_by=user,
         )
+
+
+class InstantJobPricingService:
+    """
+    Service for calculating job prices for instant jobs.
+    This determines what the provider/driver gets paid, separate from customer pricing.
+    """
+
+    @staticmethod
+    def calculate_instant_job_price(
+        request, base_job_price: Optional[Decimal] = None
+    ) -> Dict[str, Any]:
+        """
+        Calculate the job price for instant jobs based on various factors.
+
+        Args:
+            request: The Request object
+            base_job_price: Optional base job price (what provider gets paid, if not provided, uses request.base_price)
+
+        Returns:
+            Dict containing:
+            - job_price: The price the provider/driver gets paid (base price)
+            - customer_price: The price the customer pays (final price)
+            - platform_fee: The platform's take
+            - breakdown: Detailed breakdown of pricing factors
+        """
+
+        # Use base job price if provided, otherwise use request base price
+        if base_job_price is None:
+            base_job_price = request.base_price or Decimal("0")
+
+        # Get active pricing configuration
+        from apps.pricing.models import PricingConfiguration
+
+        try:
+            active_config = PricingConfiguration.objects.filter(is_active=True).first()
+            if not active_config:
+                raise ValueError("No active pricing configuration found")
+        except Exception as e:
+            logger.error(f"Error getting pricing configuration: {e}")
+            # Fallback to default values
+            active_config = None
+
+        # Start with the base job price (what provider gets paid)
+        job_price = base_job_price
+        print(f"Starting with base job price: {job_price}, Type: {type(job_price)}")
+
+        # Ensure job_price is a Decimal
+        if not isinstance(job_price, Decimal):
+            job_price = Decimal(str(job_price))
+            print(f"Converted job_price to Decimal: {job_price}")
+
+        breakdown = {
+            "base_job_price": float(job_price),
+            "factors_applied": [],
+            "adjustments": {},
+        }
+
+        # 1. Apply complexity adjustments to job price
+        try:
+            complexity_score = JobComplexityAnalyzer.calculate_complexity_score(request)
+            print(
+                f"Complexity score: {complexity_score}, Type: {type(complexity_score)}"
+            )
+            complexity_multiplier = Decimal("1.0") + (
+                Decimal(str(complexity_score)) * Decimal("0.3")
+            )  # Up to 30% increase for complexity
+            print(
+                f"Complexity multiplier: {complexity_multiplier}, Type: {type(complexity_multiplier)}"
+            )
+
+            job_price *= complexity_multiplier
+        except Exception as e:
+            print(f"Error in complexity calculation: {e}")
+            # Use default complexity multiplier
+            complexity_multiplier = Decimal("1.0")
+            complexity_score = 0.0
+            print(f"Using default complexity multiplier: {complexity_multiplier}")
+
+        breakdown["complexity_score"] = float(complexity_score)
+        breakdown["complexity_multiplier"] = float(complexity_multiplier)
+        breakdown["factors_applied"].append("complexity")
+
+        # 2. Apply distance factor to job price
+        if request.estimated_distance:
+            distance_km = Decimal(str(request.estimated_distance))
+            distance_rate = Decimal("0.50")  # £0.50 per km for driver
+
+            if active_config:
+                distance_factor = active_config.distance_factors.filter(
+                    is_active=True
+                ).first()
+                if distance_factor:
+                    distance_rate = Decimal(
+                        str(distance_factor.base_rate_per_km)
+                    ) * Decimal(
+                        "0.7"
+                    )  # 70% of customer rate
+
+            distance_adjustment = distance_km * distance_rate
+            job_price += distance_adjustment
+
+            breakdown["distance_km"] = float(distance_km)
+            breakdown["distance_rate"] = float(distance_rate)
+            breakdown["distance_adjustment"] = float(distance_adjustment)
+            breakdown["factors_applied"].append("distance")
+
+        # 3. Apply weight factor to job price
+        if request.total_weight:
+            weight_kg = Decimal(str(request.total_weight))
+            weight_rate = Decimal("0.30")  # £0.30 per kg for driver
+
+            if active_config:
+                weight_factor = active_config.weight_factors.filter(
+                    is_active=True
+                ).first()
+                if weight_factor:
+                    weight_rate = Decimal(
+                        str(weight_factor.base_rate_per_kg)
+                    ) * Decimal(
+                        "0.6"
+                    )  # 60% of customer rate
+
+            weight_adjustment = weight_kg * weight_rate
+            job_price += weight_adjustment
+
+            breakdown["weight_kg"] = float(weight_kg)
+            breakdown["weight_rate"] = float(weight_rate)
+            breakdown["weight_adjustment"] = float(weight_adjustment)
+            breakdown["factors_applied"].append("weight")
+
+        # 4. Apply time-based adjustments to job price
+        time_adjustment = Decimal("0")
+
+        # Peak hours adjustment
+        current_hour = timezone.now().hour
+        if 7 <= current_hour <= 9 or 17 <= current_hour <= 19:  # Peak hours
+            time_adjustment += job_price * Decimal("0.1")  # 10% peak hour bonus
+            breakdown["adjustments"]["peak_hours"] = True
+
+        # Weekend adjustment
+        if timezone.now().weekday() >= 5:  # Saturday = 5, Sunday = 6
+            time_adjustment += job_price * Decimal("0.15")  # 15% weekend bonus
+            breakdown["adjustments"]["weekend"] = True
+
+        # Priority adjustment
+        if request.priority == "same_day":
+            time_adjustment += job_price * Decimal("0.2")  # 20% same-day bonus
+            breakdown["adjustments"]["same_day"] = True
+        elif request.priority == "express":
+            time_adjustment += job_price * Decimal("0.15")  # 15% express bonus
+            breakdown["adjustments"]["express"] = True
+
+        job_price += time_adjustment
+        breakdown["time_adjustment"] = float(time_adjustment)
+        breakdown["factors_applied"].append("time_based")
+
+        # 5. Apply special requirements adjustments to job price
+        special_adjustment = Decimal("0")
+
+        if request.requires_special_handling:
+            special_adjustment += Decimal("25.00")  # £25 for special handling
+            breakdown["adjustments"]["special_handling"] = True
+
+        if request.staff_required and request.staff_required > 1:
+            additional_staff = request.staff_required - 1
+            special_adjustment += Decimal(
+                str(additional_staff * 15)
+            )  # £15 per additional staff
+            breakdown["adjustments"]["additional_staff"] = additional_staff
+
+        if request.insurance_required:
+            special_adjustment += Decimal("10.00")  # £10 for insurance handling
+            breakdown["adjustments"]["insurance_required"] = True
+
+        job_price += special_adjustment
+        breakdown["special_adjustment"] = float(special_adjustment)
+        breakdown["factors_applied"].append("special_requirements")
+
+        # 6. Apply location-based adjustments to job price
+        location_adjustment = Decimal("0")
+
+        # Check for difficult access locations
+        if hasattr(request, "pickup_location") and request.pickup_location:
+            if hasattr(request.pickup_location, "access_difficulty"):
+                if request.pickup_location.access_difficulty == "difficult":
+                    location_adjustment += Decimal("15.00")
+                    breakdown["adjustments"]["difficult_pickup"] = True
+                elif request.pickup_location.access_difficulty == "very_difficult":
+                    location_adjustment += Decimal("30.00")
+                    breakdown["adjustments"]["very_difficult_pickup"] = True
+
+        if hasattr(request, "dropoff_location") and request.dropoff_location:
+            if hasattr(request.dropoff_location, "access_difficulty"):
+                if request.dropoff_location.access_difficulty == "difficult":
+                    location_adjustment += Decimal("15.00")
+                    breakdown["adjustments"]["difficult_dropoff"] = True
+                elif request.dropoff_location.access_difficulty == "very_difficult":
+                    location_adjustment += Decimal("30.00")
+                    breakdown["adjustments"]["very_difficult_dropoff"] = True
+
+        job_price += location_adjustment
+        breakdown["location_adjustment"] = float(location_adjustment)
+        breakdown["factors_applied"].append("location")
+
+        # 7. Apply demand-based adjustments to job price
+        try:
+            demand_score = DemandAnalyzer.get_demand_score(request)
+            print(f"Demand score: {demand_score}, Type: {type(demand_score)}")
+            demand_multiplier = Decimal("1.0") + (
+                Decimal(str(demand_score)) * Decimal("0.2")
+            )  # Up to 20% demand bonus
+            print(
+                f"Demand multiplier: {demand_multiplier}, Type: {type(demand_multiplier)}"
+            )
+
+            job_price *= demand_multiplier
+        except Exception as e:
+            print(f"Error in demand calculation: {e}")
+            # Use default demand multiplier
+            demand_multiplier = Decimal("1.0")
+            demand_score = 0.0
+            print(f"Using default demand multiplier: {demand_multiplier}")
+
+        breakdown["demand_score"] = float(demand_score)
+        breakdown["demand_multiplier"] = float(demand_multiplier)
+        breakdown["factors_applied"].append("demand")
+
+        # 8. Apply minimum job price guarantee
+        min_job_price = Decimal("25.00")  # Minimum £25 for any job
+        if active_config and hasattr(active_config, "min_price"):
+            min_job_price = Decimal(str(active_config.min_price)) * Decimal(
+                "0.6"
+            )  # 60% of customer minimum
+
+        if job_price < min_job_price:
+            job_price = min_job_price
+            breakdown["adjustments"]["minimum_price_applied"] = True
+
+        breakdown["minimum_job_price"] = float(min_job_price)
+
+        # Round job price to 2 decimal places
+        job_price = job_price.quantize(Decimal("0.01"))
+
+        # 9. Calculate customer price by adding platform fees and markups
+        platform_fee_percentage = Decimal("0.15")  # 15% platform fee
+        if active_config and hasattr(active_config, "platform_fee_percentage"):
+            platform_fee_percentage = Decimal(
+                str(active_config.platform_fee_percentage)
+            ) / Decimal("100")
+
+        # Calculate customer price: job_price / (1 - platform_fee_percentage)
+        # This ensures the platform fee is calculated on the customer price, not the job price
+        customer_price = job_price / (Decimal("1.0") - platform_fee_percentage)
+
+        # Add additional markups for business costs
+        markup_percentage = Decimal("0.10")  # 10% additional markup for business costs
+        customer_price *= Decimal("1.0") + markup_percentage
+
+        # Calculate actual platform fee from customer price
+        platform_fee = customer_price - job_price
+
+        # Round customer price to 2 decimal places
+        customer_price = customer_price.quantize(Decimal("0.01"))
+        platform_fee = platform_fee.quantize(Decimal("0.01"))
+
+        # Final breakdown
+        breakdown["final_job_price"] = float(job_price)
+        breakdown["final_customer_price"] = float(customer_price)
+        breakdown["final_platform_fee"] = float(platform_fee)
+        breakdown["platform_fee_percentage"] = float(platform_fee_percentage * 100)
+        breakdown["markup_percentage"] = float(markup_percentage * 100)
+        breakdown["profit_margin"] = (
+            float(platform_fee / customer_price * 100) if customer_price > 0 else 0
+        )
+
+        return {
+            "job_price": job_price,
+            "customer_price": customer_price,
+            "platform_fee": platform_fee,
+            "breakdown": breakdown,
+        }
+
+    @staticmethod
+    def get_instant_pricing_summary(request) -> Dict[str, Any]:
+        """
+        Get a summary of instant pricing factors for a request.
+        Useful for displaying pricing information to users.
+        """
+        base_job_price = request.base_price or Decimal("0")
+        pricing_data = InstantJobPricingService.calculate_instant_job_price(
+            request, base_job_price
+        )
+
+        return {
+            "base_job_price": float(base_job_price),
+            "final_job_price": float(pricing_data["job_price"]),
+            "customer_price": float(pricing_data["customer_price"]),
+            "platform_fee": float(pricing_data["platform_fee"]),
+            "profit_margin_percentage": pricing_data["breakdown"]["profit_margin"],
+            "pricing_factors": pricing_data["breakdown"]["factors_applied"],
+            "adjustments": pricing_data["breakdown"]["adjustments"],
+            "complexity_score": pricing_data["breakdown"]["complexity_score"],
+            "demand_score": pricing_data["breakdown"]["demand_score"],
+        }
+
+    @staticmethod
+    def test_instant_pricing_example():
+        """
+        Test function to demonstrate instant pricing calculation.
+        This can be called from Django shell or management commands.
+        """
+        from apps.Request.models import Request
+        from decimal import Decimal
+
+        # Create a mock request for testing
+        class MockRequest:
+            def __init__(self):
+                self.base_price = Decimal("100.00")
+                self.estimated_distance = Decimal("25.0")  # 25 km
+                self.total_weight = Decimal("150.0")  # 150 kg
+                self.requires_special_handling = True
+                self.staff_required = 2
+                self.insurance_required = True
+                self.priority = "express"
+                self.special_instructions = "Handle with care - fragile items"
+                self.service_type = "furniture_moving"
+                self.request_type = "instant"
+
+                # Mock locations with access difficulty
+                class MockLocation:
+                    def __init__(self, difficulty):
+                        self.access_difficulty = difficulty
+
+                self.pickup_location = MockLocation("difficult")
+                self.dropoff_location = MockLocation("normal")
+
+        # Test the pricing
+        mock_request = MockRequest()
+        pricing_data = InstantJobPricingService.calculate_instant_job_price(
+            mock_request
+        )
+
+        print("=== INSTANT PRICING EXAMPLE ===")
+        print(f"Base Job Price: £{pricing_data['breakdown']['base_job_price']}")
+        print(f"Final Job Price: £{pricing_data['job_price']}")
+        print(f"Customer Price: £{pricing_data['customer_price']}")
+        print(f"Platform Fee: £{pricing_data['platform_fee']}")
+        print(f"Profit Margin: {pricing_data['breakdown']['profit_margin']:.1f}%")
+        print(
+            f"Platform Fee %: {pricing_data['breakdown']['platform_fee_percentage']:.1f}%"
+        )
+        print(f"Markup %: {pricing_data['breakdown']['markup_percentage']:.1f}%")
+        print("\nPricing Factors Applied:")
+        for factor in pricing_data["breakdown"]["factors_applied"]:
+            print(f"  - {factor}")
+        print("\nAdjustments:")
+        for adjustment, value in pricing_data["breakdown"]["adjustments"].items():
+            print(f"  - {adjustment}: {value}")
+        print(
+            f"\nComplexity Score: {pricing_data['breakdown']['complexity_score']:.2f}"
+        )
+        print(f"Demand Score: {pricing_data['breakdown']['demand_score']:.2f}")
+
+        return pricing_data

@@ -245,20 +245,27 @@ class LogoutAPIView(APIView):
             # Extract the token
             token = auth_header.split(" ")[1]
 
-            # Verify the token
+            # Use JWT's built-in blacklisting mechanism
+            from rest_framework_simplejwt.tokens import AccessToken
+            from rest_framework_simplejwt.token_blacklist.models import (
+                BlacklistedToken,
+                OutstandingToken,
+            )
+
+            # Decode the token to get user info
             token_backend = TokenBackend(algorithm=api_settings.ALGORITHM)
             token_data = token_backend.decode(token, verify=False)
 
-            # Blacklist the token
-            from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
-
-            BlacklistedToken.objects.create(
-                token=token,
-                user_id=token_data.get("user_id"),
-                expires_at=timezone.datetime.fromtimestamp(
-                    token_data.get("exp"), tz=dt_timezone.utc
-                ),
-            )
+            # Find the outstanding token and blacklist it
+            try:
+                outstanding_token = OutstandingToken.objects.get(
+                    jti=token_data.get("jti"), user_id=token_data.get("user_id")
+                )
+                BlacklistedToken.objects.create(token=outstanding_token)
+            except OutstandingToken.DoesNotExist:
+                # If token not found in outstanding tokens, it's likely already expired or blacklisted
+                # This is normal behavior, so we don't need to log it as a warning
+                pass
 
             return Response(
                 {"detail": "Successfully logged out."}, status=status.HTTP_200_OK
@@ -448,26 +455,62 @@ class TokenRefreshView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
+        print("TokenRefreshView", request.headers)
         # Detailed header logging
         logger.debug("=== Token Refresh Request Headers ===")
         for header, value in request.headers.items():
             logger.debug(f"{header}: {value}")
         logger.debug("=====================================")
 
-        # Get refresh token from Authorization header
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
-            return Response(
-                {"detail": "No valid refresh token provided."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+        # Get refresh token from X-Refresh-Token header first, then Authorization header
+        refresh_token = request.headers.get("X-Refresh-Token")
+        if not refresh_token:
+            # Fallback to Authorization header
+            auth_header = request.headers.get("Authorization")
+            if not auth_header or not auth_header.startswith("Bearer "):
+                return Response(
+                    {"detail": "No valid refresh token provided."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            refresh_token = auth_header.split(" ")[1]
 
-        refresh_token = auth_header.split(" ")[1]
+        print("the refresh token", refresh_token)
 
         try:
             # Verify and decode the refresh token
             token_backend = TokenBackend(algorithm=api_settings.ALGORITHM)
+
+            # Debug: Check if refresh_token is a string
+            if not isinstance(refresh_token, str):
+                logger.error(
+                    f"Refresh token is not a string: {type(refresh_token)} - {refresh_token}"
+                )
+                return Response(
+                    {"detail": "Invalid refresh token format."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Debug: Check token length
+            if len(refresh_token) < 10:
+                logger.error(
+                    f"Refresh token too short: {len(refresh_token)} characters"
+                )
+                return Response(
+                    {"detail": "Invalid refresh token length."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
             token_data = token_backend.decode(refresh_token, verify=True)
+            print("the token data", token_data)
+
+            # Debug: Check token type
+            token_type = token_data.get("token_type")
+            if token_type != "refresh":
+                logger.warning(f"Token type is {token_type}, expected 'refresh'")
+                return Response(
+                    {"detail": "Invalid token type for refresh."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
             # Get user from token
             user_id = token_data.get("user_id")
@@ -516,6 +559,13 @@ class TokenRefreshView(APIView):
         except User.DoesNotExist:
             return Response(
                 {"detail": "User not found."}, status=status.HTTP_401_UNAUTHORIZED
+            )
+        except (TypeError, ValueError) as e:
+            # Handle JWT decoding errors (like "Expected a string value")
+            logger.warning(f"JWT decoding error: {str(e)}")
+            return Response(
+                {"detail": "Invalid token format."},
+                status=status.HTTP_401_UNAUTHORIZED,
             )
         except Exception as e:
             logger.exception(f"Token refresh error: {str(e)}")
@@ -597,6 +647,35 @@ class TokenVerifyView(APIView):
                 {"detail": "An error occurred during token verification."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class DebugTokenView(APIView):
+    """
+    Debug endpoint to check JWT configuration and token decoding
+    """
+
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        from django.conf import settings
+        import os
+
+        debug_info = {
+            "secret_key_set": bool(settings.SECRET_KEY),
+            "secret_key_length": len(settings.SECRET_KEY) if settings.SECRET_KEY else 0,
+            "secret_key_start": (
+                settings.SECRET_KEY[:10] + "..." if settings.SECRET_KEY else None
+            ),
+            "jwt_algorithm": getattr(settings, "SIMPLE_JWT", {}).get(
+                "ALGORITHM", "Not set"
+            ),
+            "jwt_signing_key_set": bool(
+                getattr(settings, "SIMPLE_JWT", {}).get("SIGNING_KEY")
+            ),
+            "env_secret_key": bool(os.getenv("DJANGO_SECRET_KEY")),
+        }
+
+        return Response(debug_info)
 
 
 class SendOTPView(APIView):

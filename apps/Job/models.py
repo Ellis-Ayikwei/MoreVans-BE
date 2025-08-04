@@ -3,6 +3,7 @@ from apps.Basemodel.models import Basemodel
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from datetime import timedelta
+from decimal import Decimal
 import random
 import string
 from datetime import datetime
@@ -150,6 +151,7 @@ class Job(Basemodel):
 
     @staticmethod
     def create_job(request_obj, **kwargs):
+        print(f"create_job called with kwargs: {kwargs}")
         """
         Creates a job after payment has been completed for a request.
         If a job already exists for this request, returns the existing job.
@@ -165,11 +167,14 @@ class Job(Basemodel):
             ValueError: If the request is not in a valid state or payment is not completed
         """
         from apps.JourneyStop.models import JourneyStop
+        from decimal import Decimal
         import random
 
         # Check if a job already exists for this request
         existing_job = Job.objects.filter(request=request_obj).first()
+        print(f"Checking for existing job in create_job method: {existing_job}")
         if existing_job:
+            print(f"Returning existing job: {existing_job.id}")
             return existing_job
 
         # Get all stops ordered by sequence
@@ -177,6 +182,10 @@ class Job(Basemodel):
         pickup_stops = all_stops.filter(type="pickup")
         dropoff_stops = all_stops.filter(type="dropoff")
         intermediate_stops = all_stops.filter(type="intermediate")
+
+        print(
+            f"Stops found: {all_stops.count()} total, {pickup_stops.count()} pickup, {dropoff_stops.count()} dropoff, {intermediate_stops.count()} intermediate"
+        )
 
         # Get first pickup and last dropoff for job title
         first_pickup = pickup_stops.first()
@@ -230,33 +239,71 @@ class Job(Basemodel):
         is_instant = random.random() < instant_probability
 
         # Create the job
-        base_price = request_obj.base_price or 0.0
+        base_price = request_obj.base_price or Decimal("0.00")
+        print(f"Base price: {base_price}, Type: {type(base_price)}")
 
-        # Adjust minimum bid based on complexity
-        if is_instant:
-            minimum_bid_multiplier = 0.8 + (
-                complexity_factor * 0.1
-            )  # 80-90% for instant
+        # If base price is 0, try to calculate it
+        if base_price == Decimal("0.00"):
+            print("Base price is 0, attempting to calculate it...")
+            try:
+                base_price = request_obj.calculate_base_price()
+                print(f"Calculated base price: {base_price}")
+            except Exception as e:
+                print(f"Error calculating base price: {e}")
+                # Use a default base price
+                base_price = Decimal("50.00")
+                print(f"Using default base price: {base_price}")
+
+        # For all jobs, use the base price as the job price (what provider gets paid)
+        final_price = base_price
+
+        # Calculate minimum bid based on job type
+        if (
+            kwargs.get("is_instant", is_instant)
+            or request_obj.request_type == "instant"
+        ):
+            # For instant jobs, minimum bid is 90% of job price
+            minimum_bid = base_price * Decimal("0.9") if base_price > 0 else None
         else:
+            # For non-instant jobs, use traditional bidding approach
             minimum_bid_multiplier = 0.6 + (
                 complexity_factor * 0.2
             )  # 60-80% for bidding
+            minimum_bid = (
+                base_price * minimum_bid_multiplier if base_price > 0 else None
+            )
 
-        minimum_bid = base_price * minimum_bid_multiplier if base_price > 0 else None
+        print(f"Final price: {final_price}, Minimum bid: {minimum_bid}")
+        print(f"Complexity factor: {complexity_factor}, Is instant: {is_instant}")
 
-        job = Job.objects.create(
-            request=request_obj,
-            title=title,
-            description=description,
-            price=kwargs["price"] if kwargs["price"] else base_price,
-            status="draft",
-            is_instant=kwargs["is_instant"] if kwargs["is_instant"] else is_instant,
-            minimum_bid= kwargs["minimum_bid"] if kwargs["minimum_bid"] else minimum_bid,
-        )
+        job_data = {
+            "request": request_obj,
+            "title": title,
+            "description": description,
+            "price": kwargs.get("price", final_price),
+            "status": kwargs.get("status", "draft"),
+            "is_instant": kwargs.get("is_instant", is_instant),
+            "minimum_bid": kwargs.get("minimum_bid", minimum_bid),
+        }
+        print(f"Creating job with data: {job_data}")
+        print(f"About to call Job.objects.create with {len(job_data)} fields")
 
-        # The job_number will be automatically generated in the save() method
+        try:
+            job = Job.objects.create(**job_data)
+            print(f"Job.objects.create() completed successfully")
+        except Exception as create_error:
+            print(f"Error in Job.objects.create(): {str(create_error)}")
+            print(f"Error type: {type(create_error)}")
+            import traceback
+
+            print(f"Traceback: {traceback.format_exc()}")
+            raise create_error
+
+        # Ensure the job is saved and job number is generated
+        job.save()
 
         print(f"\033[92mJob created with number: {job.job_number}\033[0m")
+        print(f"\033[92mJob ID: {job.id}, Status: {job.status}\033[0m")
 
         return job
 
@@ -478,6 +525,7 @@ class Job(Basemodel):
                 "provider_id": str(provider.id),
             },
         )
+
     def unassign_provider(self, unassigned_by=None):
         """
         Unassign a provider to the job.

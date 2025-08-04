@@ -17,7 +17,7 @@ Create a `.env` file in your project root (same level as `manage.py`):
 
 ```bash
 # Django Settings
-DJANGO_SECRETE_KEY=your-secret-key-here
+DJANGO_SECRET_KEY=your-secret-key-here
 
 # API Keys
 GOOGLE_MAPS_API_KEY=your-actual-google-maps-api-key-here

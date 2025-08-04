@@ -55,16 +55,28 @@ class DriverSerializer(serializers.ModelSerializer):
             "max_weekly_hours",
             "opted_out_of_working_time_directive",
             "status",
+            "verification_status",
+            "last_verified",
+            "verification_notes",
             "penalty_points",
             "preferred_vehicle_types",
             "notes",
             "is_license_valid",
             "is_cpc_valid",
             "needs_license_renewal",
+            "all_documents_verified",
+            "has_required_documents",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["created_at", "updated_at"]
+        read_only_fields = [
+            "created_at",
+            "updated_at",
+            "verification_status",
+            "last_verified",
+            "all_documents_verified",
+            "has_required_documents",
+        ]
 
 
 class DriverLocationSerializer(serializers.ModelSerializer):

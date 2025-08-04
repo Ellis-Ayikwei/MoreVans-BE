@@ -29,12 +29,15 @@ class JobViewSet(viewsets.ModelViewSet):
         queryset = Job.objects.all()
         status_param = self.request.query_params.get("status", None)
         is_instant = self.request.query_params.get("is_instant", None)
+        provider = self.request.query_params.get("provider", None)
 
         if status_param:
             queryset = queryset.filter(status=status_param)
         if is_instant is not None:
             is_instant_bool = is_instant.lower() == "true"
             queryset = queryset.filter(is_instant=is_instant_bool)
+        if provider:
+            queryset = queryset.filter(provider_id=provider)
 
         return queryset
 
@@ -205,6 +208,7 @@ class JobViewSet(viewsets.ModelViewSet):
         job.assign_provider(provider)
         job.save()
         return Response({"status": "Provider assigned"})
+
     @action(detail=True, methods=["post"])
     def unassign_provider(self, request, pk=None):
         """Unassign a provider to a job"""
@@ -220,3 +224,10 @@ class JobViewSet(viewsets.ModelViewSet):
         job = self.get_object()
         bids = job.bids.all()
         return Response({"bids": BidSerializer(bids, many=True).data})
+
+    @action(detail=False, methods=["get"])
+    def bookings(self, request):
+        """Alias for jobs - returns the same data as the main jobs endpoint"""
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)

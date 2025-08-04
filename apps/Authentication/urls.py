@@ -11,6 +11,7 @@ from .views import (
     RegisterProviderAPIView,
     TokenRefreshView,
     TokenVerifyView,
+    DebugTokenView,
     UserViewSet,
     SendOTPView,
     VerifyOTPView,
@@ -51,6 +52,7 @@ urlpatterns = [
     path("change_password/", PasswordChangeAPIView.as_view(), name="change_password"),
     path("refresh_token/", TokenRefreshView.as_view(), name="token_refresh"),
     path("verify_token/", TokenVerifyView.as_view(), name="token_verify"),
+    path("debug_token/", DebugTokenView.as_view(), name="debug_token"),
     # OTP endpoints
     path("otp/send/", SendOTPView.as_view(), name="send_otp"),
     path("otp/verify/", VerifyOTPView.as_view(), name="verify_otp"),

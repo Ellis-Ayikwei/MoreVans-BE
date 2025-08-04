@@ -152,6 +152,25 @@ class Driver(Basemodel):
         help_text=_("Current driver status"),
     )
 
+    # Verification status
+    VERIFICATION_STATUSES = [
+        ("unverified", "Unverified"),
+        ("pending", "Pending Review"),
+        ("verified", "Verified"),
+        ("rejected", "Rejected"),
+    ]
+
+    verification_status = models.CharField(
+        max_length=20,
+        choices=VERIFICATION_STATUSES,
+        default="unverified",
+        help_text=_("Driver verification status based on document verification"),
+    )
+    last_verified = models.DateTimeField(null=True, blank=True)
+    verification_notes = models.TextField(
+        blank=True, help_text=_("Notes about verification process")
+    )
+
     # Driving record
     penalty_points = models.PositiveIntegerField(
         default=0,
@@ -211,6 +230,59 @@ class Driver(Basemodel):
 
         thirty_days_from_now = timezone.now().date() + timedelta(days=30)
         return self.license_expiry_date <= thirty_days_from_now
+
+    @property
+    def all_documents_verified(self):
+        """Check if all driver documents are verified"""
+        documents = self.documents.all()
+        if not documents.exists():
+            return False
+
+        # Check if all documents are verified
+        return all(doc.is_verified for doc in documents)
+
+    @property
+    def has_required_documents(self):
+        """Check if driver has all required documents"""
+        required_doc_types = ["license", "cpc"]
+        existing_doc_types = list(
+            self.documents.values_list("document_type", flat=True)
+        )
+
+        return all(doc_type in existing_doc_types for doc_type in required_doc_types)
+
+    def update_verification_status(self):
+        """Update verification status based on document verification"""
+        from django.utils import timezone
+
+        if not self.has_required_documents:
+            self.verification_status = "unverified"
+        elif self.all_documents_verified:
+            self.verification_status = "verified"
+            self.last_verified = timezone.now()
+        else:
+            self.verification_status = "pending"
+
+        self.save(update_fields=["verification_status", "last_verified"])
+
+    def verify_driver(self, notes=""):
+        """Manually verify the driver"""
+        from django.utils import timezone
+
+        self.verification_status = "verified"
+        self.last_verified = timezone.now()
+        if notes:
+            self.verification_notes = notes
+        self.save(
+            update_fields=["verification_status", "last_verified", "verification_notes"]
+        )
+
+    def reject_verification(self, notes=""):
+        """Reject driver verification"""
+        self.verification_status = "rejected"
+        if notes:
+            self.verification_notes = notes
+        self.save(update_fields=["verification_status", "verification_notes"])
 
 
 # Keeping original related models
@@ -316,6 +388,13 @@ class DriverDocument(Basemodel):
         verbose_name = _("Driver Document")
         verbose_name_plural = _("Driver Documents")
         ordering = ["-issue_date"]
+
+    def save(self, *args, **kwargs):
+        """Override save to update driver verification status"""
+        super().save(*args, **kwargs)
+        # Update driver verification status when document is saved
+        if hasattr(self, "driver"):
+            self.driver.update_verification_status()
 
 
 class DriverInfringement(Basemodel):

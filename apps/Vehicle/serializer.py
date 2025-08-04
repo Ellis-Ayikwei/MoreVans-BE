@@ -41,7 +41,54 @@ class VehicleSerializer(serializers.ModelSerializer):
     provider_id = serializers.UUIDField(write_only=True, required=False)
     vehicle_category_id = serializers.UUIDField(write_only=True, required=False)
     vehicle_type_id = serializers.UUIDField(write_only=True, required=False)
-    primary_driver_id = serializers.UUIDField(write_only=True, required=False)
+    primary_driver_id = serializers.UUIDField(
+        write_only=True, required=False, allow_null=True
+    )
+
+    def to_internal_value(self, data):
+        # Handle empty strings for datetime fields
+        if "last_location_update" in data and data["last_location_update"] == "":
+            data["last_location_update"] = None
+        if "insurance_expiry_date" in data and data["insurance_expiry_date"] == "":
+            data["insurance_expiry_date"] = None
+
+        # Handle empty strings for UUID fields
+        if "primary_driver_id" in data and data["primary_driver_id"] == "":
+            data["primary_driver_id"] = None
+        if "vehicle_type_id" in data and data["vehicle_type_id"] == "":
+            data["vehicle_type_id"] = None
+        if "vehicle_category_id" in data and data["vehicle_category_id"] == "":
+            data["vehicle_category_id"] = None
+        if "provider_id" in data and data["provider_id"] == "":
+            data["provider_id"] = None
+
+        # Map frontend field names to serializer field names
+        if "vehicle_type" in data and "vehicle_type_id" not in data:
+            vehicle_type_value = data.pop("vehicle_type")
+            if vehicle_type_value == "":
+                data["vehicle_type_id"] = None
+            else:
+                data["vehicle_type_id"] = vehicle_type_value
+        if "vehicle_category" in data and "vehicle_category_id" not in data:
+            vehicle_category_value = data.pop("vehicle_category")
+            if vehicle_category_value == "":
+                data["vehicle_category_id"] = None
+            else:
+                data["vehicle_category_id"] = vehicle_category_value
+        if "primary_driver" in data and "primary_driver_id" not in data:
+            primary_driver_value = data.pop("primary_driver")
+            if primary_driver_value == "":
+                data["primary_driver_id"] = None
+            else:
+                data["primary_driver_id"] = primary_driver_value
+        if "provider" in data and "provider_id" not in data:
+            provider_value = data.pop("provider")
+            if provider_value == "":
+                data["provider_id"] = None
+            else:
+                data["provider_id"] = provider_value
+
+        return super().to_internal_value(data)
 
     class Meta:
         model = Vehicle

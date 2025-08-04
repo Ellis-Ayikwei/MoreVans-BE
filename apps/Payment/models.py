@@ -52,7 +52,7 @@ class Payment(Basemodel):
     PAYMENT_STATUS = [
         ("pending", "Pending"),
         ("processing", "Processing"),
-        ("succeeded", "Succeeded"),
+        ("completed", "Completed"),
         ("failed", "Failed"),
         ("cancelled", "Cancelled"),
         ("refunded", "Refunded"),
@@ -122,9 +122,9 @@ class Payment(Basemodel):
 
         self._create_payment_event("processing_started", "Payment processing started")
 
-    def mark_as_succeeded(self, charge_id=None, transaction_details=None):
+    def mark_as_completed(self, charge_id=None, transaction_details=None):
         """
-        Mark payment as succeeded.
+        Mark payment as completed.
 
         Args:
             charge_id: Optional Stripe charge ID
@@ -132,12 +132,12 @@ class Payment(Basemodel):
         """
         if self.status not in ["processing", "pending"]:
             raise ValueError(
-                "Only processing or pending payments can be marked as succeeded"
+                "Only processing or pending payments can be marked as completed"
             )
 
         from django.utils import timezone
 
-        self.status = "succeeded"
+        self.status = "completed"
         self.completed_at = timezone.now()
         if charge_id:
             self.stripe_charge_id = charge_id
@@ -146,7 +146,7 @@ class Payment(Basemodel):
         self.save()
 
         self._create_payment_event(
-            "payment_succeeded", "Payment completed successfully"
+            "payment_completed", "Payment completed successfully"
         )
 
         # Trigger request payment completion
@@ -166,7 +166,7 @@ class Payment(Basemodel):
             failure_reason: Reason for payment failure
             transaction_details: Optional dictionary with additional transaction details
         """
-        if self.status in ["succeeded", "refunded", "partially_refunded"]:
+        if self.status in ["completed", "refunded", "partially_refunded"]:
             raise ValueError("Cannot mark payment as failed in current state")
 
         from django.utils import timezone
@@ -209,8 +209,8 @@ class Payment(Basemodel):
             reason: Reason for refund
             refund_id: Optional Stripe refund ID
         """
-        if self.status != "succeeded":
-            raise ValueError("Only succeeded payments can be refunded")
+        if self.status != "completed":
+            raise ValueError("Only completed payments can be refunded")
 
         from django.utils import timezone
 
@@ -271,12 +271,121 @@ class Payment(Basemodel):
     @property
     def can_be_refunded(self):
         """Check if payment can be refunded"""
-        return self.status == "succeeded"
+        return self.status == "completed"
 
     @property
     def is_complete(self):
-        """Check if payment is complete"""
-        return self.status == "succeeded"
+        """Check if payment is in a completed state"""
+        return self.status in ["completed", "refunded", "partially_refunded"]
+
+    def sync_with_job(self, force_create=False):
+        """
+        Sync this payment with job and request
+        Returns: dict with sync results
+        """
+        from apps.Job.models import Job, TimelineEvent
+        from django.db import transaction
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        if not self.is_complete:
+            return {
+                "success": False,
+                "error": f"Payment {self.id} is not completed (status: {self.status})",
+            }
+
+        try:
+            with transaction.atomic():
+                request_obj = self.request
+
+                # Check if job already exists
+                existing_job = Job.objects.filter(request=request_obj).first()
+
+                if existing_job and not force_create:
+                    return {
+                        "success": False,
+                        "error": f"Job already exists for request {request_obj.id}",
+                        "existing_job_id": existing_job.id,
+                    }
+
+                # Create or update job
+                if existing_job and force_create:
+                    job = existing_job
+                    job.price = self.amount
+                    job.status = "pending"
+                    job.save()
+                    job_created = False
+                    job_updated = True
+                else:
+                    job = Job.create_job(
+                        request_obj=request_obj,
+                        price=self.amount,
+                        status="pending",
+                        is_instant=request_obj.request_type == "instant",
+                    )
+                    job_created = True
+                    job_updated = False
+
+                # Update request status
+                old_status = request_obj.status
+                request_obj.payment_status = "completed"
+
+                if self.payment_type == "deposit":
+                    if request_obj.status == "draft":
+                        request_obj.status = "pending"
+                elif self.payment_type in ["full_payment", "final_payment"]:
+                    if request_obj.status in ["draft", "pending"]:
+                        request_obj.status = "accepted"
+
+                request_updated = (
+                    old_status != request_obj.status
+                    or request_obj.payment_status != "completed"
+                )
+                if request_updated:
+                    request_obj.save()
+
+                # Add timeline event
+                try:
+                    TimelineEvent.objects.create(
+                        job=job,
+                        event_type="payment_processed",
+                        description=f"Job {'updated' if job_updated else 'created'} from payment {self.id}",
+                        visibility="all",
+                        metadata={
+                            "payment_id": self.id,
+                            "payment_amount": str(self.amount),
+                            "payment_type": self.payment_type,
+                            "job_created": job_created,
+                            "job_updated": job_updated,
+                        },
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to create timeline event: {str(e)}")
+
+                return {
+                    "success": True,
+                    "job": {
+                        "job_id": job.id,
+                        "job_number": job.job_number,
+                        "status": job.status,
+                        "price": str(job.price),
+                        "created": job_created,
+                        "updated": job_updated,
+                    },
+                    "request": {
+                        "request_id": request_obj.id,
+                        "old_status": old_status,
+                        "new_status": request_obj.status,
+                        "payment_status": request_obj.payment_status,
+                        "updated": request_updated,
+                    },
+                    "message": f"Successfully synced payment {self.id} with job {job.id}",
+                }
+
+        except Exception as e:
+            logger.error(f"Error syncing payment {self.id}: {str(e)}")
+            return {"success": False, "error": f"Failed to sync payment: {str(e)}"}
 
 
 class PaymentEvent(Basemodel):

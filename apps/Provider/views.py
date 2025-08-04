@@ -3,6 +3,7 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils import timezone
+from django.core.exceptions import ObjectDoesNotExist
 from .models import (
     ServiceProvider,
     ServiceArea,
@@ -43,9 +44,60 @@ class ServiceProviderViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
+
+        # If user is not staff, only show their own provider profile
         if not self.request.user.is_staff:
             return queryset.filter(user=self.request.user)
+
+        # For staff users, allow filtering by user_id
+        user_id = self.request.query_params.get("user_id")
+        if user_id:
+            # Check if the user exists and is a provider
+            try:
+                user = User.objects.get(id=user_id)
+                if user.user_type == "provider":
+                    return queryset.filter(user=user)
+                else:
+                    # Return empty queryset if user is not a provider
+                    return queryset.none()
+            except ObjectDoesNotExist:
+                # Return empty queryset if user doesn't exist
+                return queryset.none()
+
         return queryset
+
+    def list(self, request, *args, **kwargs):
+        """
+        Override list method to return single object when filtering by user_id
+        """
+        user_id = request.query_params.get("user_id")
+
+        # If filtering by user_id, return single object instead of list
+        if user_id:
+            try:
+                user = User.objects.get(id=user_id)
+                if user.user_type == "provider":
+                    provider = self.get_queryset().first()
+                    if provider:
+                        serializer = self.get_serializer(provider)
+                        return Response(serializer.data)
+                    else:
+                        return Response(
+                            {"detail": "Provider profile not found"},
+                            status=status.HTTP_404_NOT_FOUND,
+                        )
+                else:
+                    return Response(
+                        {"detail": "User is not a service provider"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            except ObjectDoesNotExist:
+                return Response(
+                    {"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND
+                )
+
+        # Default list behavior for other cases
+        return super().list(request, *args, **kwargs)
 
     @action(detail=True, methods=["post", "patch"])
     def activate(self, request, pk=None):
@@ -106,7 +158,7 @@ class ServiceProviderViewSet(viewsets.ModelViewSet):
             document.save()
             serializer = ProviderDocumentSerializer(document)
             return Response(serializer.data)
-        except ProviderDocument.DoesNotExist:
+        except ObjectDoesNotExist:
             return Response(
                 {"detail": "Document not found."}, status=status.HTTP_404_NOT_FOUND
             )
@@ -134,7 +186,7 @@ class ServiceProviderViewSet(viewsets.ModelViewSet):
             document.save()
             serializer = ProviderDocumentSerializer(document)
             return Response(serializer.data)
-        except ProviderDocument.DoesNotExist:
+        except ObjectDoesNotExist:
             return Response(
                 {"detail": "Document not found."}, status=status.HTTP_404_NOT_FOUND
             )
@@ -181,7 +233,7 @@ class ServiceProviderViewSet(viewsets.ModelViewSet):
             document.save()
             serializer = ProviderDocumentSerializer(document)
             return Response(serializer.data)
-        except ProviderDocument.DoesNotExist:
+        except ObjectDoesNotExist:
             return Response(
                 {"detail": "Document not found."}, status=status.HTTP_404_NOT_FOUND
             )
@@ -216,19 +268,59 @@ class ServiceProviderViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def get_provider_by_user_id(self, request):
-        """Get provider by user id"""
+        """Get provider by user id - only works when user type is provider"""
         user_id = request.query_params.get("user_id")
-        provider = ServiceProvider.objects.get(user_id=user_id)
-        serializer = ServiceProviderSerializer(provider)
-        return Response(serializer.data)
+
+        if not user_id:
+            return Response(
+                {"detail": "user_id parameter is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            # First check if the user exists and is a provider
+            user = User.objects.get(id=user_id)
+
+            if user.user_type != "provider":
+                return Response(
+                    {"detail": "User is not a service provider"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Get the provider profile
+            provider = ServiceProvider.objects.get(user=user)
+            serializer = ServiceProviderSerializer(provider)
+            return Response(serializer.data)
+
+        except ObjectDoesNotExist:
+            return Response(
+                {"detail": "User not found"}, status=status.HTTP_404_NOT_FOUND
+            )
+        except ObjectDoesNotExist:
+            return Response(
+                {"detail": "Provider profile not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
     @action(detail=False, methods=["get"])
     def accept_job(self, request):
         """Accept a job"""
         job_id = request.query_params.get("job_id")
-        job = Job.objects.get(id=job_id)
-        job.accept_bid(request.user)
-        return Response({"status": "Job accepted"})
+
+        if not job_id:
+            return Response(
+                {"error": "job_id parameter is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            job = Job.objects.get(id=job_id)
+            job.accept_bid(request.user)
+            return Response({"status": "Job accepted"})
+        except ObjectDoesNotExist:
+            return Response(
+                {"error": "Job not found"}, status=status.HTTP_404_NOT_FOUND
+            )
 
     @action(
         detail=False, methods=["post"], permission_classes=[permissions.IsAdminUser]
@@ -437,7 +529,7 @@ class SavedJobViewSet(viewsets.ModelViewSet):
 
             return Response({"status": "job saved"})
 
-        except Job.DoesNotExist:
+        except ObjectDoesNotExist:
             return Response(
                 {"error": "Job not found"}, status=status.HTTP_404_NOT_FOUND
             )
@@ -492,7 +584,7 @@ class WatchedJobViewSet(viewsets.ModelViewSet):
 
             return Response({"status": "job watched"})
 
-        except Job.DoesNotExist:
+        except ObjectDoesNotExist:
             return Response(
                 {"error": "Job not found"}, status=status.HTTP_404_NOT_FOUND
             )

@@ -257,15 +257,15 @@ class Request(Basemodel):
         return tracking_number
 
     def calculate_base_price(self):
-        """Calculate the base price based on distance, weight, and type"""
-        from pricing.services import PricingService
+        """Calculate the base job price (what providers get paid) based on distance, weight, and type"""
+        from apps.pricing.services import PricingService
 
         # Get active pricing configuration
         active_config = PricingService.get_active_configuration()
         if not active_config:
             raise ValueError("No active pricing configuration found")
 
-        # Get base price from configuration
+        # Get base price from configuration (this is the base job price)
         base_price = float(active_config.base_price)
 
         # Different calculation based on request type
@@ -353,6 +353,18 @@ class Request(Basemodel):
         self.base_price = round(base_price, 2)
         return self.base_price
 
+    def calculate_base_job_price_from_final_price(self):
+        """Calculate the base job price (what providers get paid) from the final customer price"""
+        from apps.Request.driver_compensation import calculate_driver_payment_simple
+
+        # Use the new clean driver compensation service
+        final_price = self.final_price or self.base_price or 0
+        base_job_price = calculate_driver_payment_simple(self, final_price)
+
+        # Update the base price field
+        self.base_price = base_job_price
+        return self.base_price
+
     def get_total_item_count(self):
         """Get the total number of items in the request"""
         count = 0
@@ -369,6 +381,16 @@ class Request(Basemodel):
 
         return count
 
+    def get_or_add_base_price(self):
+        """Get the base price for the request"""
+        print(f"Getting or adding base price for request {self.id}")
+        if not self.base_price:
+            self.calculate_base_price()
+            self.base_price = self.calculate_base_price()
+            self.save()
+        print(f"Base price for request {self.id}: {self.base_price}")
+        return self.base_price
+
     def update_status(self, new_status):
         """Update request status and handle notifications"""
         if new_status not in dict(self.STATUS_CHOICES).keys():
@@ -382,7 +404,7 @@ class Request(Basemodel):
             self.payment_status = "failed"
         elif new_status == "completed":
             # Only update to completed if there was a successful payment
-            if self.payments.filter(status="succeeded").exists():
+            if self.payments.filter(status="completed").exists():
                 self.payment_status = "completed"
 
         self.save()
@@ -566,7 +588,7 @@ class Request(Basemodel):
 
         # Verify payment status
         latest_payment = self.payments.order_by("-created_at").first()
-        if not latest_payment or latest_payment.status != "succeeded":
+        if not latest_payment or latest_payment.status != "completed":
             raise ValueError("Cannot complete payment: No successful payment found")
 
         # Update payment status
@@ -624,6 +646,88 @@ class Request(Basemodel):
         )
         code = f"MV-{random_part}"
         return code
+
+    def create_job_from_payment(self, payment):
+        """
+        Create a job from a completed payment
+        Returns the created job or None if job already exists
+        """
+        from apps.Job.models import Job, TimelineEvent
+
+        # Check if job already exists
+        existing_job = Job.objects.filter(request=self).first()
+        if existing_job:
+            return existing_job
+
+        # Create job
+        job = Job.create_job(
+            request_obj=self,
+            price=payment.amount,
+            status="pending",
+            is_instant=self.request_type == "instant",
+        )
+
+        # Update request status based on payment type
+        old_status = self.status
+        self.payment_status = "completed"
+
+        if payment.payment_type == "deposit":
+            if self.status == "draft":
+                self.status = "pending"
+        elif payment.payment_type in ["full_payment", "final_payment"]:
+            if self.status in ["draft", "pending"]:
+                self.status = "accepted"
+
+        # Save request if status changed
+        if old_status != self.status or self.payment_status != "completed":
+            self.save()
+
+        # Add timeline event
+        try:
+            TimelineEvent.objects.create(
+                job=job,
+                event_type="payment_processed",
+                description=f"Job created from payment {payment.id}",
+                visibility="all",
+                metadata={
+                    "payment_id": payment.id,
+                    "payment_amount": str(payment.amount),
+                    "payment_type": payment.payment_type,
+                    "manually_triggered": True,
+                },
+            )
+        except Exception as e:
+            import logging
+
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to create timeline event: {str(e)}")
+
+        return job
+
+    def get_or_create_job_from_payments(self):
+        """
+        Get existing job or create one from the most recent completed payment
+        Returns the job object
+        """
+        from apps.Job.models import Job
+        from apps.Payment.models import Payment
+
+        # Check if job already exists
+        existing_job = Job.objects.filter(request=self).first()
+        if existing_job:
+            return existing_job
+
+        # Get the most recent completed payment
+        latest_payment = (
+            Payment.objects.filter(request=self, status="completed")
+            .order_by("-completed_at")
+            .first()
+        )
+
+        if latest_payment:
+            return self.create_job_from_payment(latest_payment)
+
+        return None
 
     @staticmethod
     def reconcile_statuses(
@@ -718,7 +822,7 @@ class Request(Basemodel):
                         action_taken.append(error_msg)
 
                 # Case 1: Payment completed but request not marked
-                if latest_payment and latest_payment.status == "succeeded":
+                if latest_payment and latest_payment.status == "completed":
                     if request.status != "payment_completed":
                         old_status = request.status
                         request.status = "payment_completed"
@@ -776,7 +880,7 @@ class Request(Basemodel):
                 if latest_payment:
                     # Map Stripe payment status to our defined PAYMENT_STATUSES
                     expected_payment_status = {
-                        "succeeded": "completed",  # Payment model -> Request model status
+                        "completed": "completed",  # Payment model -> Request model status
                         "processing": "pending",
                         "requires_payment_method": "pending",
                         "requires_confirmation": "pending",

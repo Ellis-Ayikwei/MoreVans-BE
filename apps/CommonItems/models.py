@@ -323,6 +323,13 @@ class VehicleSize(Basemodel):
 
     is_active = models.BooleanField(default=True)
 
+    class Meta:
+        db_table = "vehicle_size"
+        managed = True
+        verbose_name = "Vehicle Size"
+        verbose_name_plural = "Vehicle Sizes"
+        ordering = ["name"]
+
 
 class VehicleType(Basemodel):
     """The model for vehicle type eg, goods vehicle and vehicle transporter"""
@@ -343,6 +350,13 @@ class VehicleType(Basemodel):
     priority = models.IntegerField(default=0, help_text="Display priority order")
 
     is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "vehicle_type"
+        managed = True
+        verbose_name = "Vehicle Type"
+        verbose_name_plural = "Vehicle Types"
+        ordering = ["name"]
 
 
 class VehicleCategory(Basemodel):

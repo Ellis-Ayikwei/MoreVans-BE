@@ -612,6 +612,13 @@ class PricingConfiguration(Basemodel):
         validators=[MinValueValidator(0.00)],
         help_text="Carbon offset rate as percentage of total price",
     )
+    platform_fee_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=15.00,
+        validators=[MinValueValidator(0.00), MaxValueValidator(100.00)],
+        help_text="Platform fee as percentage of customer price",
+    )
 
     # Add factor relationships
     distance_factors = models.ManyToManyField(
