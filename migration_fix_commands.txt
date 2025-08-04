@@ -1,0 +1,39 @@
+# Django Migration Fix Commands
+# =============================
+
+# These commands should be run in your Django project with the virtual environment activated
+
+# 1. First, check the current migration status:
+python manage.py showmigrations CommonItems
+
+# 2. If you see that CommonItems.0003 is not recognized, but the file exists, try:
+python manage.py migrate CommonItems 0002_initial --fake
+python manage.py migrate CommonItems 0003_alter_commonitem_options_alter_itembrand_options_and_more --fake
+python manage.py migrate CommonItems 0004_alter_vehiclesize_options_alter_vehicletype_options_and_more --fake
+
+# 3. Then apply all other migrations:
+python manage.py migrate
+
+# Alternative approach if the above doesn't work:
+
+# Option A: Reset CommonItems migrations (if database is empty or you can afford to lose CommonItems data)
+python manage.py migrate CommonItems zero
+python manage.py migrate CommonItems --fake-initial
+
+# Option B: If you're getting the error during initial setup, try:
+python manage.py migrate --fake-initial
+
+# Option C: If nothing else works, you might need to:
+# 1. Delete the problematic migration from django_migrations table:
+#    Run this SQL in your database:
+#    DELETE FROM django_migrations WHERE app = 'CommonItems' AND name LIKE '0003%';
+#    DELETE FROM django_migrations WHERE app = 'CommonItems' AND name LIKE '0004%';
+#
+# 2. Then fake the migrations:
+#    python manage.py migrate CommonItems --fake
+
+# To check for any other migration issues in all apps:
+python manage.py showmigrations
+
+# If you see any apps with unapplied migrations, run:
+python manage.py migrate
