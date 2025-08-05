@@ -1,0 +1,36 @@
+{{ app_name|default:"MoreVans" }}
+==============================================
+
+Hello {{ user_name }}!
+
+✓ PAYMENT SUCCESSFUL
+{% if amount %}
+Amount: £{{ amount }}
+{% endif %}
+
+{{ message }}
+
+{% if payment %}
+PAYMENT DETAILS
+---------------
+Transaction ID: {{ payment.stripe_payment_intent_id|default:payment.id }}
+Amount: £{{ payment.amount }}
+Payment Method: {{ payment.payment_method|default:"Card" }}
+Date: {{ payment.completed_at|date:"d M Y, H:i" }}
+Status: {{ payment.status|capfirst }}
+{% if payment.request %}Booking Reference: {{ payment.request.tracking_number|default:"#REF" }}{% endif %}
+{% endif %}
+
+{% if action_url %}
+View receipt: {{ action_url }}
+{% endif %}
+
+WHAT'S NEXT?
+Your booking is now being processed and you'll receive updates as your service progresses.
+
+Need help? Contact our support team at support@morevans.com
+
+---
+This is an automated message, please do not reply to this email.
+
+© {{ current_year }} {{ app_name|default:"MoreVans" }}. All rights reserved.

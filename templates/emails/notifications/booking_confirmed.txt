@@ -1,0 +1,37 @@
+{{ app_name|default:"MoreVans" }}
+==============================================
+
+Hello {{ user_name }}!
+
+✓ BOOKING CONFIRMED
+
+{{ message }}
+
+{% if provider %}
+YOUR SERVICE PROVIDER
+----------------------
+Company: {{ provider.company_name }}
+{% if provider.user.phone_number %}Phone: {{ provider.user.phone_number }}{% endif %}
+{% if provider.user.email %}Email: {{ provider.user.email }}{% endif %}
+{% if provider.rating %}Rating: ⭐ {{ provider.rating }}/5{% endif %}
+{% endif %}
+
+{% if request %}
+BOOKING SUMMARY
+---------------
+Reference: {{ request.tracking_number|default:"#REF" }}
+{% if request.pickup_location %}Pickup: {{ request.pickup_location.address|default:"TBD" }}{% endif %}
+{% if request.delivery_location %}Delivery: {{ request.delivery_location.address|default:"TBD" }}{% endif %}
+{% if request.preferred_date %}Date: {{ request.preferred_date|date:"d M Y" }}{% endif %}
+{% endif %}
+
+{% if action_url %}
+View your booking: {{ action_url }}
+{% endif %}
+
+Need help? Contact our support team at support@morevans.com
+
+---
+This is an automated message, please do not reply to this email.
+
+© {{ current_year }} {{ app_name|default:"MoreVans" }}. All rights reserved.

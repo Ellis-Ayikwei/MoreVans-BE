@@ -805,6 +805,7 @@ class VerifyOTPView(APIView):
 
     def post(self, request):
         serializer = VerifyOTPSerializer(data=request.data)
+        print("the otp data", request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

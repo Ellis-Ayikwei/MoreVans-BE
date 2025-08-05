@@ -1,0 +1,36 @@
+{{ app_name|default:"MoreVans" }}
+==============================================
+
+Hello {{ user_name }}!
+
+{{ title }}
+
+{{ message }}
+
+{% if request %}
+BOOKING DETAILS
+---------------
+Booking Reference: {{ request.tracking_number|default:"#REF" }}
+{% if request.pickup_location %}Pickup Location: {{ request.pickup_location.address|default:"TBD" }}{% endif %}
+{% if request.delivery_location %}Delivery Location: {{ request.delivery_location.address|default:"TBD" }}{% endif %}
+{% if request.preferred_date %}Preferred Date: {{ request.preferred_date|date:"d M Y" }}{% endif %}
+{% if request.estimated_price %}Estimated Price: £{{ request.estimated_price }}{% endif %}
+{% endif %}
+
+WHAT HAPPENS NEXT?
+------------------
+• Service providers will review your booking request
+• You'll receive notifications when providers submit bids
+• You can compare bids and choose the best provider
+• Once you accept a bid, we'll connect you with your provider
+
+{% if action_url %}
+View your booking: {{ action_url }}
+{% endif %}
+
+Need help? Contact our support team at support@morevans.com
+
+---
+This is an automated message, please do not reply to this email.
+
+© {{ current_year }} {{ app_name|default:"MoreVans" }}. All rights reserved.

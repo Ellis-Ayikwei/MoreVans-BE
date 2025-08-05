@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #FF9800 0%, #FFA726 100%);
+            color: white;
+            padding: 40px 20px 30px;
+            text-align: center;
+            border-radius: 12px 12px 0 0;
+            position: relative;
+            overflow: hidden;
+        }
+        .header-content { position: relative; z-index: 1; }
+        .logo {
+            margin: 0 auto 20px;
+            background-color: rgba(255, 255, 255, 0.9);
+            border-radius: 50%;
+            width: 80px;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            font-weight: bold;
+            color: #FF9800;
+        }
+        .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
+        .content { padding: 40px 30px; text-align: center; }
+        .greeting { font-size: 18px; color: #FF9800; margin-bottom: 20px; }
+        .message { font-size: 16px; line-height: 1.8; margin-bottom: 30px; color: #555; }
+        .verification-badge {
+            background: linear-gradient(135deg, #4CAF50 0%, #66BB6A 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin: 20px 0;
+        }
+        .benefits {
+            background-color: #fff3e0;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            text-align: left;
+        }
+        .benefits h3 { color: #FF9800; margin-top: 0; }
+        .benefits ul { margin: 0; padding-left: 20px; }
+        .benefits li { margin-bottom: 8px; }
+        .cta-button {
+            display: inline-block;
+            background: linear-gradient(135deg, #FF9800 0%, #FFA726 100%);
+            color: white;
+            text-decoration: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 16px;
+            margin: 20px 0;
+            transition: transform 0.2s ease;
+        }
+        .cta-button:hover { transform: translateY(-2px); }
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-size: 14px;
+            border-top: 1px solid #e9ecef;
+        }
+        .footer a { color: #FF9800; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-content">
+                <div class="logo">🎉</div>
+                <h1>{{ title }}</h1>
+            </div>
+        </div>
+        
+        <div class="content">
+            <div class="greeting">Congratulations {{ user_name }}!</div>
+            
+            <div class="verification-badge">
+                <div style="font-size: 48px; margin-bottom: 10px;">✓</div>
+                <div style="font-size: 20px; font-weight: 600;">Account Verified</div>
+                <div style="font-size: 14px; margin-top: 5px; opacity: 0.9;">You're now a trusted MoreVans provider</div>
+            </div>
+            
+            <div class="message">
+                {{ message }}
+            </div>
+            
+            <div class="benefits">
+                <h3>As a verified provider, you can now:</h3>
+                <ul>
+                    <li>✅ Bid on available jobs in your area</li>
+                    <li>✅ Build your reputation with customer ratings</li>
+                    <li>✅ Access our provider dashboard and tools</li>
+                    <li>✅ Receive direct job assignments</li>
+                    <li>✅ Get paid securely through our platform</li>
+                    <li>✅ Join our network of trusted professionals</li>
+                </ul>
+            </div>
+            
+            {% if provider %}
+            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; text-align: left;">
+                <h3 style="margin-top: 0; color: #FF9800;">Your Provider Profile</h3>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <span style="font-weight: 600;">Company:</span>
+                    <span>{{ provider.company_name }}</span>
+                </div>
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <span style="font-weight: 600;">Business Type:</span>
+                    <span>{{ provider.get_business_type_display }}</span>
+                </div>
+                {% if provider.service_categories.all %}
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                    <span style="font-weight: 600;">Services:</span>
+                    <span>{{ provider.service_categories.all|join:", " }}</span>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+            
+            {% if action_url %}
+            <a href="{{ action_url }}" class="cta-button">{{ action_text|default:"Go to Provider Dashboard" }}</a>
+            {% endif %}
+            
+            <div style="background-color: #e8f5e8; padding: 15px; border-radius: 8px; margin-top: 20px;">
+                <p style="margin: 0; font-size: 14px; color: #2e7d32;">
+                    <strong>Ready to start earning?</strong><br>
+                    Check out available jobs in your area and start building your MoreVans reputation today!
+                </p>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Need help getting started? Contact our provider support at <a href="mailto:providers@morevans.com">providers@morevans.com</a></p>
+            <p>&copy; {{ current_year }} {{ app_name }}. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,39 @@
+{{ app_name|default:"MoreVans" }}
+==============================================
+
+Congratulations {{ user_name }}!
+
+🎉 ACCOUNT VERIFIED
+
+{{ message }}
+
+AS A VERIFIED PROVIDER, YOU CAN NOW:
+------------------------------------
+✅ Bid on available jobs in your area
+✅ Build your reputation with customer ratings
+✅ Access our provider dashboard and tools
+✅ Receive direct job assignments
+✅ Get paid securely through our platform
+✅ Join our network of trusted professionals
+
+{% if provider %}
+YOUR PROVIDER PROFILE
+----------------------
+Company: {{ provider.company_name }}
+Business Type: {{ provider.get_business_type_display }}
+{% if provider.service_categories.all %}Services: {{ provider.service_categories.all|join:", " }}{% endif %}
+{% endif %}
+
+{% if action_url %}
+Go to Provider Dashboard: {{ action_url }}
+{% endif %}
+
+READY TO START EARNING?
+Check out available jobs in your area and start building your MoreVans reputation today!
+
+Need help getting started? Contact our provider support at providers@morevans.com
+
+---
+This is an automated message, please do not reply to this email.
+
+© {{ current_year }} {{ app_name|default:"MoreVans" }}. All rights reserved.
