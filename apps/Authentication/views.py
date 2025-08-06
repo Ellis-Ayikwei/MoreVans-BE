@@ -1164,7 +1164,7 @@ class MFALoginView(APIView):
     throttle_classes = [AnonRateThrottle]
 
     def post(self, request):
-        serializer = LoginSerializer(data=request.data, context={"request": request})
+        serializer = MFALoginSerializer(data=request.data, context={"request": request})
 
         try:
             serializer.is_valid(raise_exception=False)
