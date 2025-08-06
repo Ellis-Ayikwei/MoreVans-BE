@@ -192,11 +192,32 @@ class LoginAPIView(APIView):
         try:
             serializer.is_valid(raise_exception=False)
             if not serializer.is_valid():
-                # Log failed login attempt but return generic error
+                # Check for specific error types before returning generic error
                 ip = get_client_ip(request)
                 email = request.data.get("email", "unknown")
+
+                # Check if this is an inactive account error
+                for field_errors in serializer.errors.values():
+                    if isinstance(field_errors, list):
+                        for error in field_errors:
+                            if (
+                                isinstance(error, dict)
+                                and error.get("code") == "inactive_account"
+                            ):
+                                logger.warning(
+                                    f"Inactive account login attempt for {email} from IP {ip}"
+                                )
+                                return Response(
+                                    {
+                                        "detail": "Your account has been disabled. Please contact support for assistance.",
+                                        "error_code": "ACCOUNT_DISABLED",
+                                        "support_email": "support@morevans.com",
+                                    },
+                                    status=status.HTTP_403_FORBIDDEN,
+                                )
+
+                # Log failed login attempt and return generic error for other validation failures
                 logger.warning(f"Failed login attempt for {email} from IP {ip}")
-                # Increment failed login counter in cache
                 increment_failed_logins(email, ip)
                 return Response(
                     {"detail": "Invalid credentials"},
@@ -1171,11 +1192,48 @@ class MFALoginView(APIView):
         try:
             serializer.is_valid(raise_exception=False)
             if not serializer.is_valid():
-                # Log failed login attempt but return generic error
+                # Check for specific error types before returning generic error
                 ip = get_client_ip(request)
                 email = request.data.get("email", "unknown")
+
+                # Check if this is an inactive account error
+                for field_errors in serializer.errors.values():
+                    if isinstance(field_errors, list):
+                        for error in field_errors:
+                            if (
+                                isinstance(error, dict)
+                                and error.get("code") == "inactive_account"
+                            ):
+                                logger.warning(
+                                    f"Inactive account login attempt for {email} from IP {ip}"
+                                )
+                                return Response(
+                                    {
+                                        "message": "Your account has been disabled. Please contact support for assistance.",
+                                        "error_code": "ACCOUNT_DISABLED",
+                                        "support_email": "support@morevans.com",
+                                    },
+                                    status=status.HTTP_403_FORBIDDEN,
+                                )
+                            elif (
+                                isinstance(error, dict)
+                                and error.get("code") == "user_not_found"
+                            ):
+                                logger.warning(
+                                    f"User not found for {email} from IP {ip}"
+                                )
+                                # Still return generic message for security
+                                increment_failed_logins(email, ip)
+                                return Response(
+                                    {
+                                        "message": "Invalid credentials provided.",
+                                        "error_code": "INVALID_CREDENTIALS",
+                                    },
+                                    status=status.HTTP_401_UNAUTHORIZED,
+                                )
+
+                # Log failed login attempt and return generic error for other validation failures
                 logger.warning(f"Failed MFA login attempt for {email} from IP {ip}")
-                # Increment failed login counter in cache
                 increment_failed_logins(email, ip)
                 return Response(
                     {

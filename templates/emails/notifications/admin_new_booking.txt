@@ -1,0 +1,61 @@
+{{ app_name|default:"MoreVans" }} - ADMIN NOTIFICATION
+==============================================
+
+Hello {{ user_name }}!
+
+{{ title }}
+
+{{ message }}
+
+{% if request %}
+BOOKING DETAILS
+---------------
+Booking Reference: {{ request.tracking_number|default:"#REF" }}
+Created: {{ request.created_at|date:"d M Y H:i" }}
+Status: {{ request.status|default:"Pending" }}
+{% if request.pickup_location %}Pickup Location: {{ request.pickup_location.address|default:"TBD" }}{% endif %}
+{% if request.delivery_location %}Delivery Location: {{ request.delivery_location.address|default:"TBD" }}{% endif %}
+{% if request.preferred_date %}Preferred Date: {{ request.preferred_date|date:"d M Y" }}{% endif %}
+{% if request.estimated_price %}Estimated Price: £{{ request.estimated_price }}{% endif %}
+{% if request.service_type %}Service Type: {{ request.service_type }}{% endif %}
+{% if request.weight %}Total Weight: {{ request.weight }} kg{% endif %}
+
+{% if request.user %}
+CUSTOMER INFORMATION
+--------------------
+Customer Name: {{ request.user.first_name }} {{ request.user.last_name }}
+Email: {{ request.user.email }}
+{% if request.user.phone_number %}Phone: {{ request.user.phone_number }}{% endif %}
+Customer Since: {{ request.user.date_joined|date:"M Y" }}
+{% endif %}
+{% endif %}
+
+{% if stats %}
+CURRENT STATS
+-------------
+Pending Bookings: {{ stats.pending_bookings|default:0 }}
+Active Providers: {{ stats.active_providers|default:0 }}
+{% endif %}
+
+REQUIRED ACTIONS
+----------------
+• Review booking for completeness and accuracy
+• Verify customer information if this is a new user
+• Monitor provider response rate for this booking
+• Follow up if no bids received within 2 hours
+• Check for any special requirements or flags
+
+{% if admin_dashboard_url %}
+Admin Panel: {{ admin_dashboard_url }}
+{% endif %}
+{% if booking_details_url %}
+Booking Details: {{ booking_details_url }}
+{% endif %}
+
+Admin Support: admin@morevans.com
+System Issues: tech@morevans.com
+
+---
+This is an automated admin notification, please do not reply to this email.
+
+© {{ current_year }} {{ app_name|default:"MoreVans" }} Admin Panel. All rights reserved.

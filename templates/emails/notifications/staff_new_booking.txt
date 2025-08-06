@@ -1,0 +1,57 @@
+{{ app_name|default:"MoreVans" }} - STAFF NOTIFICATION
+==============================================
+
+Hello {{ user_name }}!
+
+{{ title }}
+
+{{ message }}
+
+{% if priority %}
+PRIORITY: {{ priority|upper }}
+{% endif %}
+
+{% if request %}
+BOOKING SUMMARY
+---------------
+Reference: {{ request.tracking_number|default:"#REF" }}
+Time Created: {{ request.created_at|date:"d M Y H:i" }}
+{% if request.pickup_location %}From: {{ request.pickup_location.address|truncatechars:50|default:"TBD" }}{% endif %}
+{% if request.delivery_location %}To: {{ request.delivery_location.address|truncatechars:50|default:"TBD" }}{% endif %}
+{% if request.preferred_date %}Preferred Date: {{ request.preferred_date|date:"d M Y" }}{% endif %}
+{% if request.estimated_price %}Est. Value: £{{ request.estimated_price }}{% endif %}
+
+{% if request.user %}
+CUSTOMER SUMMARY
+----------------
+Customer: {{ request.user.first_name }} {{ request.user.last_name }}
+Contact: {{ request.user.email }}
+{% if request.user.phone_number %}Phone: {{ request.user.phone_number }}{% endif %}
+{% endif %}
+{% endif %}
+
+YOUR TASKS
+----------
+• Monitor booking progress and provider responses
+• Ensure customer receives timely updates
+• Escalate to supervisor if issues arise
+• Follow up on customer satisfaction after completion
+
+{% if staff_dashboard_url %}
+Staff Dashboard: {{ staff_dashboard_url }}
+{% endif %}
+{% if booking_details_url %}
+View Booking: {{ booking_details_url }}
+{% endif %}
+
+{% if notification_preferences_url %}
+Customize notifications: {{ notification_preferences_url }}
+{% endif %}
+
+Staff Support: staff@morevans.com
+Help Desk: +44 123 456 789
+
+---
+This is an automated staff notification, please do not reply to this email.
+
+© {{ current_year }} {{ app_name|default:"MoreVans" }} Staff Portal. All rights reserved.

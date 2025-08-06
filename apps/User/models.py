@@ -60,6 +60,16 @@ class User(AbstractUser):
         ("admin", "Admin"),
     )
 
+    ACCOUNT_STATUS_CHOICES = (
+        ("active", "Active"),
+        ("inactive", "Inactive"),
+        ("pending", "Pending"),
+        ("suspended", "Suspended"),
+        ("deleted", "Deleted"),
+        ("banned", "Banned"),
+        ("expired", "Expired"),
+    )
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = models.EmailField(unique=True)
     phone_number = models.CharField(max_length=15)
@@ -72,11 +82,13 @@ class User(AbstractUser):
     rating = models.DecimalField(max_digits=3, decimal_places=2, default=0.0)
     stripe_customer_id = models.CharField(max_length=100, null=True, blank=True)
     notification_preferences = models.JSONField(default=dict)
-    account_status = models.CharField(max_length=20, default="active")
     last_active = models.DateTimeField(null=True)
     device_tokens = models.JSONField(default=list)
     user_type = models.CharField(
         max_length=20, choices=USER_TYPE_CHOICES, default="customer"
+    )
+    account_status = models.CharField(
+        max_length=20, choices=ACCOUNT_STATUS_CHOICES, default="active"
     )
 
     username = None
