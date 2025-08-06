@@ -234,13 +234,63 @@ class LoginSerializer(serializers.Serializer):
             )
 
         if user:
-            # Make sure the user is active
+            # Check Django's is_active field first
             if not user.is_active:
-                logger.warning(f"User {email} is inactive")
+                logger.warning(f"User {email} is inactive (Django is_active=False)")
                 raise serializers.ValidationError(
-                    {"detail": "User account is disabled.", "code": "inactive_account"},
-                    code="authorization",
+                    "User account is disabled.",
+                    code="inactive_account",
                 )
+
+            # Check custom account_status field for more specific statuses
+            account_status = getattr(user, "account_status", "active")
+
+            if account_status == "inactive":
+                logger.warning(f"User {email} has inactive account status")
+                raise serializers.ValidationError(
+                    "Your account is currently inactive. Please contact support to reactivate your account.",
+                    code="account_inactive",
+                )
+            elif account_status == "pending":
+                logger.warning(f"User {email} has pending account status")
+                raise serializers.ValidationError(
+                    "Your account is pending approval. You will receive an email once your account is activated.",
+                    code="account_pending",
+                )
+            elif account_status == "suspended":
+                logger.warning(f"User {email} has suspended account status")
+                raise serializers.ValidationError(
+                    "Your account has been temporarily suspended. Please contact support for more information.",
+                    code="account_suspended",
+                )
+            elif account_status == "deleted":
+                logger.warning(f"User {email} has deleted account status")
+                raise serializers.ValidationError(
+                    "This account has been deleted. Please contact support if you believe this is an error.",
+                    code="account_deleted",
+                )
+            elif account_status == "banned":
+                logger.warning(f"User {email} has banned account status")
+                raise serializers.ValidationError(
+                    "Your account has been permanently banned due to policy violations.",
+                    code="account_banned",
+                )
+            elif account_status == "expired":
+                logger.warning(f"User {email} has expired account status")
+                raise serializers.ValidationError(
+                    "Your account has expired. Please renew your subscription or contact support.",
+                    code="account_expired",
+                )
+            elif account_status != "active":
+                # Catch any other unexpected status values
+                logger.warning(
+                    f"User {email} has unknown account status: {account_status}"
+                )
+                raise serializers.ValidationError(
+                    "Your account status is unknown. Please contact support for assistance.",
+                    code="account_unknown_status",
+                )
+
             logger.info(f"Authentication successful for {email}")
         else:
             # Check if user exists but credentials are invalid
