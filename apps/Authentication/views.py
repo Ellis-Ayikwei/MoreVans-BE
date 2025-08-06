@@ -192,127 +192,11 @@ class LoginAPIView(APIView):
         try:
             serializer.is_valid(raise_exception=False)
             if not serializer.is_valid():
-                # Check for specific error types before returning generic error
+                # Log failed login attempt but return generic error
                 ip = get_client_ip(request)
                 email = request.data.get("email", "unknown")
-
-                # Check for specific account status errors
-                for field_errors in serializer.errors.values():
-                    if isinstance(field_errors, list):
-                        for error in field_errors:
-                            # Handle ErrorDetail objects from ValidationError
-                            if hasattr(error, "code"):
-                                error_code = error.code
-                                error_detail = str(error)
-                            elif isinstance(error, dict):
-                                error_code = error.get("code")
-                                error_detail = error.get(
-                                    "detail", "Authentication failed"
-                                )
-                            else:
-                                continue
-
-                            # Handle different account status errors
-                            if error_code == "inactive_account":
-                                logger.warning(
-                                    f"Inactive account login attempt for {email} from IP {ip}"
-                                )
-                                return Response(
-                                    {
-                                        "detail": error_detail,
-                                        "error_code": "NOT_ACTIVATED",
-                                        "support_email": "support@morevans.com",
-                                    },
-                                    status=status.HTTP_403_FORBIDDEN,
-                                )
-                            elif error_code == "account_inactive":
-                                logger.warning(
-                                    f"Account inactive login attempt for {email} from IP {ip}"
-                                )
-                                return Response(
-                                    {
-                                        "detail": error_detail,
-                                        "error_code": "ACCOUNT_INACTIVE",
-                                        "support_email": "support@morevans.com",
-                                    },
-                                    status=status.HTTP_403_FORBIDDEN,
-                                )
-                            elif error_code == "account_pending":
-                                logger.warning(
-                                    f"Pending account login attempt for {email} from IP {ip}"
-                                )
-                                return Response(
-                                    {
-                                        "detail": error_detail,
-                                        "error_code": "ACCOUNT_PENDING",
-                                        "action_required": "WAIT_FOR_APPROVAL",
-                                    },
-                                    status=status.HTTP_403_FORBIDDEN,
-                                )
-                            elif error_code == "account_suspended":
-                                logger.warning(
-                                    f"Suspended account login attempt for {email} from IP {ip}"
-                                )
-                                return Response(
-                                    {
-                                        "detail": error_detail,
-                                        "error_code": "ACCOUNT_SUSPENDED",
-                                        "support_email": "support@morevans.com",
-                                    },
-                                    status=status.HTTP_403_FORBIDDEN,
-                                )
-                            elif error_code == "account_deleted":
-                                logger.warning(
-                                    f"Deleted account login attempt for {email} from IP {ip}"
-                                )
-                                return Response(
-                                    {
-                                        "detail": error_detail,
-                                        "error_code": "ACCOUNT_DELETED",
-                                        "support_email": "support@morevans.com",
-                                    },
-                                    status=status.HTTP_410_GONE,
-                                )
-                            elif error_code == "account_banned":
-                                logger.warning(
-                                    f"Banned account login attempt for {email} from IP {ip}"
-                                )
-                                return Response(
-                                    {
-                                        "detail": error_detail,
-                                        "error_code": "ACCOUNT_BANNED",
-                                        "support_email": "support@morevans.com",
-                                    },
-                                    status=status.HTTP_403_FORBIDDEN,
-                                )
-                            elif error_code == "account_expired":
-                                logger.warning(
-                                    f"Expired account login attempt for {email} from IP {ip}"
-                                )
-                                return Response(
-                                    {
-                                        "detail": error_detail,
-                                        "error_code": "ACCOUNT_EXPIRED",
-                                        "action_required": "RENEW_SUBSCRIPTION",
-                                        "support_email": "support@morevans.com",
-                                    },
-                                    status=status.HTTP_402_PAYMENT_REQUIRED,
-                                )
-                            elif error_code == "account_unknown_status":
-                                logger.warning(
-                                    f"Unknown status account login attempt for {email} from IP {ip}"
-                                )
-                                return Response(
-                                    {
-                                        "detail": error_detail,
-                                        "error_code": "ACCOUNT_UNKNOWN_STATUS",
-                                        "support_email": "support@morevans.com",
-                                    },
-                                    status=status.HTTP_403_FORBIDDEN,
-                                )
-
-                # Log failed login attempt and return generic error for other validation failures
                 logger.warning(f"Failed login attempt for {email} from IP {ip}")
+                # Increment failed login counter in cache
                 increment_failed_logins(email, ip)
                 return Response(
                     {"detail": "Invalid credentials"},
@@ -381,8 +265,6 @@ class LoginAPIView(APIView):
                 {"detail": "Authentication failed. Please try again."},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
-
-
 class LogoutAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
