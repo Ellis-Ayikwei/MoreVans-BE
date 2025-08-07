@@ -12,6 +12,7 @@ from apps.Bidding.models import Bid
 from apps.Bidding.serializers import BidSerializer
 from apps.Request.views import RequestViewSet
 from decimal import Decimal
+from apps.Chat.utils import create_job_conversation, get_or_create_conversation_for_object, add_system_message
 
 # Create your views here.
 
@@ -207,6 +208,24 @@ class JobViewSet(viewsets.ModelViewSet):
         provider = ServiceProvider.objects.get(id=provider_id)
         job.assign_provider(provider)
         job.save()
+        
+        # Create or update job conversation
+        try:
+            conversation, created = get_or_create_conversation_for_object(job, 'job')
+            
+            # Add provider to conversation if not already there
+            if provider.user:
+                conversation.add_participant(provider.user)
+            
+            # Add system message
+            add_system_message(
+                conversation,
+                f"Provider {provider.company_name or provider.user.username} has been assigned to this job.",
+                metadata={'job_id': str(job.id), 'provider_id': str(provider.id), 'action': 'provider_assigned'}
+            )
+        except Exception as e:
+            print(f"Error creating job conversation: {e}")
+        
         return Response({"status": "Provider assigned"})
 
     @action(detail=True, methods=["post"])
@@ -218,6 +237,55 @@ class JobViewSet(viewsets.ModelViewSet):
         job.unassign_provider()
         job.save()
         return Response({"status": "Provider unassigned"})
+    
+    @action(detail=True, methods=["get"])
+    def conversation(self, request, pk=None):
+        """Get the chat conversation for a job"""
+        job = self.get_object()
+        user = request.user
+        
+        # Check if user has access to this job
+        is_admin = user.is_staff or user.is_superuser
+        is_job_owner = job.request.user == user
+        is_assigned_provider = (
+            job.assigned_provider and 
+            hasattr(job.assigned_provider, 'user') and 
+            job.assigned_provider.user == user
+        )
+        
+        if not (is_admin or is_job_owner or is_assigned_provider):
+            return Response(
+                {"error": "You don't have permission to view this conversation"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        
+        # Get or create conversation
+        conversation, created = get_or_create_conversation_for_object(job, 'job')
+        
+        if created:
+            # Set up participants
+            participants = []
+            if job.request and job.request.user:
+                participants.append(job.request.user)
+            if job.assigned_provider and hasattr(job.assigned_provider, 'user'):
+                participants.append(job.assigned_provider.user)
+            
+            for participant in participants:
+                conversation.add_participant(participant)
+            
+            # Add initial message
+            add_system_message(
+                conversation,
+                f"Job conversation started for: {job.title or job.job_number}",
+                metadata={'job_id': str(job.id), 'action': 'job_conversation_created'}
+            )
+        
+        return Response({
+            "conversation_id": str(conversation.id),
+            "conversation_type": conversation.conversation_type,
+            "title": conversation.title,
+            "created": created
+        })
 
     @action(detail=False, methods=["get"])
     def bids(self, request, pk=None):

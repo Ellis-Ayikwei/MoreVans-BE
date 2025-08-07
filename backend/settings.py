@@ -79,6 +79,7 @@ INSTALLED_APPS = [
     "apps.CommonItems",
     "apps.RequestItems",
     "apps.JourneyStop",
+    "apps.Chat",
 ]
 
 MIDDLEWARE = [

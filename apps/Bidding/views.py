@@ -6,6 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 from .models import Bid
 from .serializers import BidSerializer
+from apps.Chat.utils import create_bid_conversation, get_or_create_conversation_for_object, add_system_message
 
 
 class BidViewSet(viewsets.ModelViewSet):
@@ -43,6 +44,25 @@ class BidViewSet(viewsets.ModelViewSet):
             or user.is_superuser
             or getattr(user, "user_type", None) == "admin"
         )
+    
+    def perform_create(self, serializer):
+        """Override to create chat conversation when bid is created"""
+        bid = serializer.save()
+        
+        # Create a chat conversation for this bid
+        try:
+            conversation = create_bid_conversation(bid)
+            # Add initial system message
+            add_system_message(
+                conversation,
+                f"Bid conversation started. Bid amount: ${bid.amount}",
+                metadata={'bid_id': str(bid.id), 'action': 'bid_created'}
+            )
+        except Exception as e:
+            # Log error but don't fail the bid creation
+            print(f"Error creating bid conversation: {e}")
+        
+        return bid
 
     def can_modify_bid(self, user, bid):
         """Check if user can modify a bid"""
@@ -146,6 +166,17 @@ class BidViewSet(viewsets.ModelViewSet):
         Bid.objects.filter(job=job, status="pending").exclude(id=bid.id).update(
             status="rejected"
         )
+        
+        # Add system message to bid conversation
+        try:
+            conversation, _ = get_or_create_conversation_for_object(bid, 'bid')
+            add_system_message(
+                conversation,
+                f"Bid has been accepted! Amount: ${bid.amount}",
+                metadata={'bid_id': str(bid.id), 'action': 'bid_accepted'}
+            )
+        except Exception as e:
+            print(f"Error updating bid conversation: {e}")
 
         return Response(
             {"message": "Bid accepted successfully", "bid": BidSerializer(bid).data},
@@ -261,3 +292,48 @@ class BidViewSet(viewsets.ModelViewSet):
 
         serializer = BidSerializer(bids, many=True)
         return Response(serializer.data)
+    
+    @action(detail=True, methods=["get"])
+    def conversation(self, request, pk=None):
+        """Get the chat conversation for a bid"""
+        bid = self.get_object()
+        user = request.user
+        
+        # Check if user has access to this bid
+        is_admin = self.is_admin(user)
+        is_provider = hasattr(user, "provider") and bid.provider == user.provider
+        is_job_owner = bid.job.request.user == user
+        
+        if not (is_admin or is_provider or is_job_owner):
+            return Response(
+                {"error": "You don't have permission to view this conversation"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        
+        # Get or create conversation
+        conversation, created = get_or_create_conversation_for_object(bid, 'bid')
+        
+        if created:
+            # If newly created, set up participants
+            participants = []
+            if bid.provider and hasattr(bid.provider, 'user'):
+                participants.append(bid.provider.user)
+            if bid.job and bid.job.request and bid.job.request.user:
+                participants.append(bid.job.request.user)
+            
+            for participant in participants:
+                conversation.add_participant(participant)
+            
+            # Add initial message
+            add_system_message(
+                conversation,
+                f"Bid conversation started. Bid amount: ${bid.amount}",
+                metadata={'bid_id': str(bid.id), 'action': 'bid_created'}
+            )
+        
+        return Response({
+            "conversation_id": str(conversation.id),
+            "conversation_type": conversation.conversation_type,
+            "title": conversation.title,
+            "created": created
+        })

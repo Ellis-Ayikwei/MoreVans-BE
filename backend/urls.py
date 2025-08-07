@@ -118,6 +118,7 @@ urlpatterns = [
                 path("", include("apps.Bidding.urls")),
                 path("", include("apps.CommonItems.urls")),
                 path("", include("apps.Message.urls")),
+                path("chat/", include("apps.Chat.urls")),
                 path("", include("apps.Services.urls")),
                 path("", include("apps.Vehicle.urls")),
                 # Media files under API prefix

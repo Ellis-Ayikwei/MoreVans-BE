@@ -1,6 +1,7 @@
 from django.db import models
-
 from apps.Basemodel.models import Basemodel
+from apps.Request.models import Request
+from apps.User.models import User
 
 
 class Dispute(Basemodel):
