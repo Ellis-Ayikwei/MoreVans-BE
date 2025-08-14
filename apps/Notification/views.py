@@ -173,7 +173,7 @@ class NotificationViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        notification_type = request.data.get("notification_type", "system")
+        notification_type = request.data.get("notification_type", "system_test")
         test_data = request.data.get("test_data", {})
 
         notification = NotificationService.create_notification(

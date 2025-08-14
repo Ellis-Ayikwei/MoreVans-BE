@@ -152,6 +152,7 @@ class RequestSerializer(serializers.ModelSerializer):
             "stops",
             "milestones",
             "user_id",
+            "staff_required",
         ]
         read_only_fields = ["user", "messages"]  # Make sure user is read-only
         extra_kwargs = {"user": {"read_only": True, "required": False}}
@@ -254,6 +255,7 @@ class RequestSerializer(serializers.ModelSerializer):
         journey_stops_data = validated_data.pop("journey_stops", [])
         moving_items_data = validated_data.pop("moving_items", [])
         request_type = validated_data.get("request_type")
+        service_type = validated_data.get("service_type")
 
         # Remove any potential reverse relation fields that might cause issues
         if "items" in validated_data:

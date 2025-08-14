@@ -118,3 +118,57 @@ class UserVerification(Basemodel):
 
     def __str__(self):
         return f"{getattr(self.user, 'email', 'Unknown')} - Email: {self.email_verified}, Phone: {self.phone_verified}"
+
+
+class TrustedDevice(Basemodel):
+    """Trusted device record to allow OTP bypass and bind refresh token to device."""
+
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="trusted_devices"
+    )
+    device_id = models.CharField(max_length=128)
+    device_fingerprint_hash = models.CharField(max_length=256)
+    device_name = models.CharField(max_length=200, blank=True)
+    device_info = models.JSONField(null=True, blank=True)
+    refresh_token_hash = models.CharField(max_length=256, blank=True)
+    last_used = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "trusted_devices"
+        indexes = [
+            models.Index(fields=["user", "device_id"]),
+            models.Index(fields=["user", "device_fingerprint_hash"]),
+            models.Index(fields=["refresh_token_hash"]),
+            models.Index(fields=["expires_at"]),
+        ]
+        unique_together = ("user", "device_id")
+
+    def __str__(self):
+        return f"TrustedDevice({self.user_id}, {self.device_name or self.device_id})"
+
+
+class LoginSession(Basemodel):
+    """Short-lived login session for OTP verification during device trust onboarding."""
+
+    id = models.UUIDField(primary_key=True, editable=False)
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="login_sessions"
+    )
+    device_fingerprint_hash = models.CharField(max_length=256)
+    otp_code = models.CharField(max_length=6)
+    otp_expires_at = models.DateTimeField()
+    attempts = models.IntegerField(default=0)
+    max_attempts = models.IntegerField(default=3)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    is_verified = models.BooleanField(default=False)
+
+    class Meta:
+        db_table = "login_sessions"
+        indexes = [
+            models.Index(fields=["user", "otp_expires_at"]),
+        ]
+
+    def __str__(self):
+        return f"LoginSession({self.user_id}, verified={self.is_verified})"

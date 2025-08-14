@@ -19,7 +19,7 @@ class Bid(Basemodel):
     )
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
-    notes = models.TextField(blank=True)
+    message = models.TextField(blank=True)
     counter_offer = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True
     )
@@ -29,6 +29,7 @@ class Bid(Basemodel):
         verbose_name = _("Bid")
         verbose_name_plural = _("Bids")
         ordering = ["-created_at"]
+        managed = True
 
     def __str__(self):
         return f"Bid of {self.amount} for {self.job}"

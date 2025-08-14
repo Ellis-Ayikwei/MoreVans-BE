@@ -20,7 +20,7 @@ class BidSerializer(serializers.ModelSerializer):
             "provider_id",
             "amount",
             "status",
-            "notes",
+            "message",
             "created_at",
             "updated_at",
         ]

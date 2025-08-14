@@ -25,6 +25,9 @@ from .views import (
     AdminEmailStatsView,
     AdminResetGlobalEmailLimitView,
     AdminOTPDebugLogsView,
+    ListTrustedDevicesView,
+    RevokeTrustedDeviceView,
+    RevokeAllTrustedDevicesView,
 )
 
 
@@ -51,6 +54,21 @@ urlpatterns = [
     ),
     path("change_password/", PasswordChangeAPIView.as_view(), name="change_password"),
     path("refresh_token/", TokenRefreshView.as_view(), name="token_refresh"),
+    path(
+        "device-trust/devices/<uuid:user_id>/",
+        ListTrustedDevicesView.as_view(),
+        name="list_trusted_devices",
+    ),
+    path(
+        "device-trust/devices/revoke/<uuid:device_id>/",
+        RevokeTrustedDeviceView.as_view(),
+        name="revoke_trusted_device",
+    ),
+    path(
+        "device-trust/devices/revoke-all/<uuid:user_id>/",
+        RevokeAllTrustedDevicesView.as_view(),
+        name="revoke_all_trusted_devices",
+    ),
     path("verify_token/", TokenVerifyView.as_view(), name="token_verify"),
     path("debug_token/", DebugTokenView.as_view(), name="debug_token"),
     # OTP endpoints

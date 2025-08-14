@@ -6,10 +6,33 @@ from datetime import timedelta
 from decimal import Decimal
 import random
 import string
-from datetime import datetime
-from rest_framework import serializers
-from .services import JobTimelineService
-from apps.Request.serializer import RequestSerializer
+
+# Removed unused imports related to serializers and datetime
+from apps.Provider.models import ServiceProvider
+
+
+class JobProviderAcceptance(Basemodel):
+    """
+    This model is used to track the accepted providers for a job.
+    """
+
+    job = models.ForeignKey(
+        "Job.Job", on_delete=models.CASCADE, related_name="accepted_provider_links"
+    )
+    provider = models.ForeignKey(
+        ServiceProvider, on_delete=models.CASCADE, related_name="accepted_job_links"
+    )
+    accepted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "job_provider_acceptances"
+        managed = True
+        verbose_name = "Job Provider Acceptance"
+        verbose_name_plural = "Job Provider Acceptances"
+        unique_together = ("job", "provider")
+
+    def __str__(self):
+        return f"JobProviderAcceptance {self.id}"
 
 
 class Job(Basemodel):
@@ -37,8 +60,14 @@ class Job(Basemodel):
         null=True,
         help_text="Unique job identifier with prefix",
     )
+    accepted_providers = models.ManyToManyField(
+        "Provider.ServiceProvider",
+        related_name="accepted_jobs",
+        through="JobProviderAcceptance",
+        blank=True,
+    )
     price = models.DecimalField(
-        max_digits=10, decimal_places=2, default=0.0, null=True, blank=True
+        max_digits=10, decimal_places=2, default=Decimal("0.00"), null=True, blank=True
     )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="draft")
     is_completed = models.BooleanField(default=False)
@@ -82,7 +111,7 @@ class Job(Basemodel):
             return self.job_number
 
         # Get current date for the prefix
-        now = datetime.now()
+        now = timezone.now()
         date_prefix = now.strftime("%Y%m")
 
         # Get the count of jobs created this month to generate sequential number
@@ -99,7 +128,6 @@ class Job(Basemodel):
 
         # Ensure uniqueness (in case of race conditions)
         counter = 1
-        original_job_number = job_number
         while Job.objects.filter(job_number=job_number).exclude(id=self.id).exists():
             counter += 1
             sequential_number = str(jobs_this_month + counter).zfill(3)
@@ -138,7 +166,7 @@ class Job(Basemodel):
         Preview what the next job number would be without creating a job.
         Useful for displaying to users before job creation.
         """
-        now = datetime.now()
+        now = timezone.now()
         date_prefix = now.strftime("%Y%m")
 
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -151,7 +179,6 @@ class Job(Basemodel):
 
     @staticmethod
     def create_job(request_obj, **kwargs):
-        print(f"create_job called with kwargs: {kwargs}")
         """
         Creates a job after payment has been completed for a request.
         If a job already exists for this request, returns the existing job.
@@ -166,9 +193,7 @@ class Job(Basemodel):
         Raises:
             ValueError: If the request is not in a valid state or payment is not completed
         """
-        from apps.JourneyStop.models import JourneyStop
-        from decimal import Decimal
-        import random
+        print(f"create_job called with kwargs: {kwargs}")
 
         # Check if a job already exists for this request
         existing_job = Job.objects.filter(request=request_obj).first()
@@ -290,7 +315,7 @@ class Job(Basemodel):
 
         try:
             job = Job.objects.create(**job_data)
-            print(f"Job.objects.create() completed successfully")
+            print("Job.objects.create() completed successfully")
         except Exception as create_error:
             print(f"Error in Job.objects.create(): {str(create_error)}")
             print(f"Error type: {type(create_error)}")
@@ -391,7 +416,7 @@ class Job(Basemodel):
         """Accept a bid for this job"""
         if self.status == "bidding":
             self.status = "assigned"
-            self.provider = bid.provider
+            self.assigned_provider = bid.provider
             self.save()
             return True
         return False
@@ -501,7 +526,7 @@ class Job(Basemodel):
         Raises:
             ValueError: If job is not in a valid state for provider assignment
         """
-        valid_states = ["draft", "pending", "bidding", "accepted", "unassigned"]
+        valid_states = ["draft", "pending", "bidding", "accepted"]
         if self.status not in valid_states:
             raise ValueError(f"Cannot assign provider in state: {self.status}")
 
@@ -528,7 +553,7 @@ class Job(Basemodel):
 
     def unassign_provider(self, unassigned_by=None):
         """
-        Unassign a provider to the job.
+        Unassign a provider from the job.
 
         Args:
             provider: The ServiceProvider instance to assign
@@ -544,9 +569,9 @@ class Job(Basemodel):
         if not self.assigned_provider:
             raise ValueError("No Provider is assigned yet")
 
-        old_status = self.status
-        self.status = "unassigned"
+        self.status = "pending"
         self.assigned_provider = None
+        _ = unassigned_by
         self.save()
 
     def accept_job(self, accepted_by):
@@ -648,60 +673,4 @@ class TimelineEvent(Basemodel):
         verbose_name_plural = "Timeline Events"
 
     def __str__(self):
-        return f"{self.get_event_type_display()} - {self.job.request.tracking_number}"
-
-
-class JobSerializer(serializers.ModelSerializer):
-    request = RequestSerializer(read_only=True)
-    request_id = serializers.CharField(write_only=True)
-    time_remaining = serializers.SerializerMethodField()
-    timeline_events = serializers.SerializerMethodField()
-    job_number = serializers.CharField(read_only=True)  # Add this if not auto-generated
-
-    class Meta:
-        model = Job
-        fields = [
-            "id",
-            "job_number",  # Add job number
-            "title",  # Add title
-            "description",  # Add description
-            "is_instant",  # Add instant flag
-            "request",
-            "request_id",
-            "status",
-            "is_completed",  # Add completion status
-            "price",
-            "minimum_bid",
-            "bidding_end_time",
-            "preferred_vehicle_types",
-            "required_qualifications",
-            "notes",
-            "assigned_provider",  # Add assigned provider
-            "time_remaining",
-            "timeline_events",
-            "created_at",
-            "updated_at",
-        ]
-        read_only_fields = ["id", "job_number", "created_at", "updated_at"]
-
-    def get_time_remaining(self, obj):
-        if obj.bidding_end_time:
-            from django.utils import timezone
-
-            remaining = obj.bidding_end_time - timezone.now()
-            return max(0, remaining.total_seconds())
-        return None
-
-    def get_timeline_events(self, obj):
-        # Import here to avoid circular imports
-        from .services import JobTimelineService
-
-        # Get the requesting user
-        user = None
-        request = self.context.get("request")
-        if request and hasattr(request, "user"):
-            user = request.user
-
-        # Get timeline events with proper visibility filtering
-        events = JobTimelineService.get_job_timeline(job=obj, user=user)
-        return TimelineEventSerializer(events, many=True).data
+        return f"TimelineEvent {self.id}"

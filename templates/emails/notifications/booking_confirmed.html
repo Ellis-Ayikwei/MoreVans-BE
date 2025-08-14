@@ -31,19 +31,8 @@
             overflow: hidden;
         }
         .header-content { position: relative; z-index: 1; }
-        .logo {
-            margin: 0 auto 20px;
-            background-color: rgba(255, 255, 255, 0.9);
-            border-radius: 50%;
-            width: 80px;
-            height: 80px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 32px;
-            font-weight: bold;
-            color: #1976D2;
-        }
+        .logo { margin: 0 auto 16px; background: #ffffff; display: inline-block; padding: 8px 12px; border-radius: 8px; }
+        .logo img { height: 40px; display: block; }
         .header h1 { margin: 0; font-size: 24px; font-weight: 600; }
         .content { padding: 40px 30px; text-align: center; }
         .greeting { font-size: 18px; color: #1976D2; margin-bottom: 20px; }
@@ -114,7 +103,9 @@
     <div class="container">
         <div class="header">
             <div class="header-content">
-                <div class="logo">MV</div>
+                <div class="logo">
+                    <img src="https://morevans.sfo3.cdn.digitaloceanspaces.com/email%20images%20/morevanstextdark.png" alt="MoreVans" />
+                </div>
                 <h1>{{ title }}</h1>
             </div>
         </div>

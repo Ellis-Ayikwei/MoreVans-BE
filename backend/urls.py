@@ -121,6 +121,7 @@ urlpatterns = [
                 path("chat/", include("apps.Chat.urls")),
                 path("", include("apps.Services.urls")),
                 path("", include("apps.Vehicle.urls")),
+                path("", include("apps.Notification.urls")),
                 # Media files under API prefix
                 *static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT),
             ]

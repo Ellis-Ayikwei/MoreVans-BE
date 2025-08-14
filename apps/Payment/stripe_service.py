@@ -546,6 +546,7 @@ class StripeService:
                 "id": session.id,
                 "status": session.status,
                 "payment_status": session.payment_status,
+                "url": getattr(session, "url", None),
                 "amount_total": (
                     Decimal(session.amount_total) / 100
                     if session.amount_total
@@ -559,6 +560,27 @@ class StripeService:
         except stripe.error.StripeError as e:
             logger.error(f"Error retrieving checkout session {session_id}: {str(e)}")
             return None
+
+    def expire_checkout_session(self, session_id: str) -> bool:
+        """
+        Expire an open checkout session to prevent further use.
+
+        Returns True if expired (or already non-open), False otherwise.
+        """
+        try:
+            session = stripe.checkout.Session.retrieve(session_id)
+            # Only expire if session is open
+            if getattr(session, "status", None) == "open":
+                stripe.checkout.Session.expire(session_id)
+                logger.info(f"Expired checkout session {session_id}")
+            else:
+                logger.info(
+                    f"Checkout session {session_id} not open (status={session.status}), skipping expire"
+                )
+            return True
+        except stripe.error.StripeError as e:
+            logger.error(f"Error expiring checkout session {session_id}: {str(e)}")
+            return False
 
     def handle_webhook_event(self, payload: str, sig_header: str) -> Optional[Dict]:
         """

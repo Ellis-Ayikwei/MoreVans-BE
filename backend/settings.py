@@ -232,8 +232,8 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     "DEFAULT_THROTTLE_CLASSES": [
-        "rest_framework.throttling.AnonRateThrottle",
-        "rest_framework.throttling.UserRateThrottle",
+        # "rest_framework.throttling.AnonRateThrottle",
+        # "rest_framework.throttling.UserRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {"anon": "100/day", "user": "1000/day"},
     # Configure renderers so that responses are in camelCase.
@@ -370,7 +370,7 @@ print(f"EMAIL_BACKEND: {EMAIL_BACKEND}")
 print("===================================")
 
 
-APPEND_SLASH = False
+APPEND_SLASH = True
 
 # --- Stripe Configuration ---
 # Stripe API Keys (get these from Stripe Dashboard)

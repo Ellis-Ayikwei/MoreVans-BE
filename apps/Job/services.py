@@ -13,6 +13,18 @@ User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
+def to_decimal(value: Any) -> Optional[Decimal]:
+    """Safely convert numbers/strings to Decimal."""
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return value
+    try:
+        return Decimal(str(value))
+    except Exception:
+        return None
+
+
 class JobComplexityAnalyzer:
     """Analyzes job complexity based on request parameters"""
 
@@ -173,8 +185,10 @@ class ProviderAvailabilityService:
 
             # Get providers in the area (you might need to implement location-based filtering)
             available_providers = ServiceProvider.objects.filter(
-                is_active=True,
-                # Add location/area filtering based on your model structure
+                user__is_active=True,
+                verification_status__in=["verified", "premium"],
+                accepts_instant_bookings=True,
+                # TODO: Add location/area filtering based on your model structure
             ).count()
 
             result = available_providers > 0
@@ -331,12 +345,13 @@ class JobService:
 
             # Use instant pricing
             reasoning.append("Job suitable for instant pricing algorithm")
+            base_price_dec = to_decimal(request.base_price)
             return {
                 "strategy": "instant",
                 "is_instant": True,
                 "confidence_score": confidence_score,
                 "reasoning": reasoning,
-                "estimated_price": request.base_price,
+                "estimated_price": base_price_dec,
                 "booking_expires_minutes": 5,
                 "recommendation": "Show instant price and booking option",
             }
@@ -352,6 +367,8 @@ class JobService:
             else:
                 bidding_hours = 12  # Simple jobs get shorter bidding
 
+            base_price_dec = to_decimal(request.base_price)
+            minimum_bid = (base_price_dec * Decimal("0.8")) if base_price_dec else None
             return {
                 "strategy": "biddable",
                 "is_instant": False,
@@ -359,7 +376,7 @@ class JobService:
                 "reasoning": reasoning,
                 "estimated_response_time": f"{bidding_hours//12 * 2}-{bidding_hours//6} hours",
                 "bidding_duration_hours": bidding_hours,
-                "minimum_bid": request.base_price * 0.8 if request.base_price else None,
+                "minimum_bid": minimum_bid,
                 "recommendation": "Create auction listing for competitive bidding",
             }
 

@@ -42,16 +42,8 @@
             position: relative;
             z-index: 1;
         }
-        .logo {
-            margin: 0 auto 20px;
-            background-color: rgba(255, 255, 255, 0.71);
-          
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 32px;
-            font-weight: bold;
-        }
+        .logo { margin: 0 auto 16px; background: #ffffff; display: inline-block; padding: 8px 12px; border-radius: 8px; }
+        .logo img { height: 40px; display: block; }
         .header h1 {
             margin: 0;
             font-size: 32px;
@@ -164,16 +156,9 @@
     <div class="container">
         <div class="header">
             <div class="header-content">
-                <!-- Option 1: Text-based logo (works everywhere) -->
-                
-                <!-- Option 2: Base64 embedded image (recommended for emails) -->
-               
-                
-                <!-- Option 3: External URL (if you have a hosted image) -->
-                
-                <img src="https://morevans.com/static/images/morevanstext.png" alt="{{ app_name }}" style="width: 80px; height: 80px; margin: 0 auto 20px; display: block; border-radius: 50%;">
-                
-                
+                <div class="logo">
+                    <img src="https://morevans.sfo3.cdn.digitaloceanspaces.com/email%20images%20/morevanstextdark.png" alt="{{ app_name|default:'MoreVans' }}" />
+                </div>
                 <h1>{{ app_name|default:"MoreVans" }}</h1>
                 <p>Secure Verification</p>
             </div>

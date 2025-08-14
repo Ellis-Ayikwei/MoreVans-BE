@@ -142,7 +142,14 @@ class PaymentViewSet(viewsets.ModelViewSet):
         """
         Instantiate and return the list of permissions that this view requires.
         """
-        if self.action == "create_checkout_session":
+        if self.action in [
+            "create_checkout_session",
+            "check_session_status",
+            "poll_status",
+            "poll_until_complete",
+            "bulk_poll",
+            "needs_polling",
+        ]:
             return [permissions.AllowAny()]
         elif self.action in ["create", "update", "partial_update", "destroy"]:
             # Only admins can create/update/delete payments directly
@@ -652,7 +659,12 @@ class PaymentViewSet(viewsets.ModelViewSet):
             }
         )
 
-    @action(detail=False, methods=["post"], permission_classes=[permissions.AllowAny])
+    @action(
+        detail=False,
+        methods=["post"],
+        permission_classes=[permissions.AllowAny],
+        authentication_classes=[],
+    )
     def create_checkout_session(self, request):
         """
         Create a Stripe Checkout Session for payment
@@ -694,18 +706,77 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Check if there's already a pending payment for this request
+        # Initialize Stripe service for session handling
+        stripe_service = StripeService()
+
+        # Check if there's already a pending or processing payment for this request
         existing_payment = Payment.objects.filter(
             request=request_obj, status__in=["pending", "processing"]
         ).first()
 
         if existing_payment:
-            return Response(
-                {"detail": "There is already a pending payment for this request"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            from decimal import Decimal
 
-        stripe_service = StripeService()
+            # If a payment is already processing, return info to continue with the existing checkout
+            if existing_payment.status == "processing":
+                existing_session = None
+                if existing_payment.transaction_id:
+                    existing_session = stripe_service.retrieve_checkout_session(
+                        existing_payment.transaction_id
+                    )
+                return Response(
+                    {
+                        "detail": "A payment is already in progress. Please complete the existing checkout or try again shortly.",
+                        "existing_session": existing_session,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            # For pending payments, try to reuse the open session if the amount/currency match
+            if existing_payment.status == "pending":
+                requested_amount = Decimal(str(amount))
+                same_amount = (
+                    existing_payment.amount == requested_amount
+                    and (currency or "").upper() == existing_payment.currency
+                )
+
+                existing_session = None
+                if existing_payment.transaction_id:
+                    existing_session = stripe_service.retrieve_checkout_session(
+                        existing_payment.transaction_id
+                    )
+
+                session_open = (
+                    existing_session is not None
+                    and existing_session.get("status") == "open"
+                )
+
+                # Reuse existing open session when amounts match
+                if session_open and same_amount:
+                    return Response(
+                        {
+                            "id": existing_session.get("id"),
+                            "url": existing_session.get("url"),
+                            "status": existing_session.get("status"),
+                            "amount": str(existing_payment.amount),
+                            "currency": existing_payment.currency,
+                            "reused": True,
+                        },
+                        status=status.HTTP_200_OK,
+                    )
+
+                # Otherwise, expire old open session (if any) and cancel the local payment, then proceed to create a new one
+                if session_open:
+                    stripe_service.expire_checkout_session(
+                        existing_payment.transaction_id
+                    )
+                try:
+                    existing_payment.cancel_payment(
+                        reason="Superseded by new checkout session"
+                    )
+                except Exception:
+                    # Do not block new session creation if cancellation fails
+                    pass
         if user_id:
             # Get the actual user object from user_id
             from django.contrib.auth import get_user_model
@@ -801,7 +872,12 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-    @action(detail=False, methods=["get"])
+    @action(
+        detail=False,
+        methods=["get"],
+        authentication_classes=[],
+        permission_classes=[permissions.AllowAny],
+    )
     def check_session_status(self, request):
         """
         Check the status of a checkout session
@@ -817,7 +893,20 @@ class PaymentViewSet(viewsets.ModelViewSet):
         result = stripe_service.retrieve_checkout_session(session_id)
 
         if result:
+            if (
+                result.get("status") == "complete"
+                and result.get("payment_status") == "paid"
+            ):
+                try:
+                    request_obj = Request.objects.get(
+                        id=result.get("metadata").get("request_id")
+                    )
+                    JobService.create_job_with_strategy(request_obj)
+                    return Response(result)
+                except Exception as e:
+                    print(f"Error creating job: {e}")
             return Response(result)
+
         else:
             return Response(
                 {"detail": "Session not found"}, status=status.HTTP_404_NOT_FOUND
@@ -924,12 +1013,12 @@ class PaymentViewSet(viewsets.ModelViewSet):
                                     base_job_price = (
                                         request_obj.calculate_base_job_price_from_final_price()
                                     )
-                                    job = Job.create_job(
-                                        request_obj=request_obj,
-                                        price=base_job_price,
-                                        status="pending",
-                                        is_instant=request_obj.request_type
-                                        == "instant",
+                                    from apps.Job.services import JobService
+
+                                    request_obj.base_price = base_job_price
+                                    request_obj.save(update_fields=["base_price"])
+                                    job = JobService.create_job_with_strategy(
+                                        request_obj
                                     )
 
                                     request_obj.base_price = base_job_price
@@ -1122,13 +1211,12 @@ class PaymentViewSet(viewsets.ModelViewSet):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
-                # Create job
-                job = Job.create_job(
-                    request_obj=request_obj,
-                    price=payment.amount,
-                    status="pending",
-                    is_instant=request_obj.request_type == "instant",
-                )
+                # Create job using strategy
+                from apps.Job.services import JobService
+
+                request_obj.base_price = payment.amount
+                request_obj.save(update_fields=["base_price"])
+                job = JobService.create_job_with_strategy(request_obj)
 
                 # Update request status
                 old_status = request_obj.status
@@ -1248,13 +1336,12 @@ class StripeWebhookView(APIView):
                 existing_job = Job.objects.filter(request=request_obj).first()
 
                 if not existing_job:
-                    # Create job
-                    job = Job.create_job(
-                        request_obj=request_obj,
-                        price=payment.amount,
-                        status="pending",
-                        is_instant=request_obj.request_type == "instant",
-                    )
+                    # Create job using strategy
+                    from apps.Job.services import JobService
+
+                    request_obj.base_price = payment.amount
+                    request_obj.save(update_fields=["base_price"])
+                    job = JobService.create_job_with_strategy(request_obj)
 
                     # Update request status
                     old_status = request_obj.status

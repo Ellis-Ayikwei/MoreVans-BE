@@ -185,6 +185,7 @@ class MFALoginVerifySerializer(serializers.Serializer):
 
 class MFALoginSerializer(serializers.Serializer):
     """Serializer for MFA login verification"""
+
     email = serializers.EmailField()
     password = serializers.CharField(
         style={"input_type": "password"}, trim_whitespace=False
@@ -351,7 +352,7 @@ class LoginSerializer(serializers.Serializer):
         # First attempt with email parameter
         user = authenticate(
             request=self.context.get("request"),
-            email=email.lower(),  # Ensure lowercase email
+            email=email.lower(),
             password=password,
         )
 
@@ -396,6 +397,8 @@ class LoginSerializer(serializers.Serializer):
 
         attrs["user"] = user
         return attrs
+
+
 class PasswordRecoverySerializer(serializers.Serializer):
     email = serializers.EmailField()
 

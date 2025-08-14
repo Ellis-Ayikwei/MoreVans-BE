@@ -123,6 +123,12 @@ class NotificationService:
             "email_template": "rating_reminder",
             "default_channels": ["in_app", "email"],
         },
+        # System/Admin
+        "system_test": {
+            "subject": "System Test Notification",
+            "email_template": "system_test",
+            "default_channels": ["in_app", "email"],
+        },
     }
 
     @classmethod
@@ -329,6 +335,27 @@ class NotificationService:
 
         return messages.get(notification_type, "You have a new notification.")
 
+    @classmethod
+    def has_sent_email_for(
+        cls,
+        user: User,
+        notification_type: str,
+        related_object_type: str,
+        related_object_id: Any,
+    ) -> bool:
+        """Check if an email for this notification context has already been sent."""
+        try:
+            return Notification.objects.filter(
+                user=user,
+                notification_type=notification_type,
+                related_object_type=related_object_type,
+                related_object_id=str(related_object_id),
+                email_sent=True,
+            ).exists()
+        except Exception as e:
+            logger.error("Error checking sent email for notification: %s", str(e))
+            return False
+
     # Convenience methods for common notification types
 
     @classmethod
@@ -445,6 +472,28 @@ class NotificationService:
             job=job_obj,
             old_status=old_status,
             new_status=new_status,
+            **kwargs,
+        )
+
+    @classmethod
+    def notify_system_test(
+        cls,
+        user: User,
+        title: Optional[str] = None,
+        message: Optional[str] = None,
+        data: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ):
+        """Send a simple system test notification to a user."""
+        return cls.create_notification(
+            user=user,
+            notification_type="system_test",
+            title=title or "System Test",
+            message=message or "This is a test notification from the system.",
+            data=data or {},
+            related_object_type="system",
+            related_object_id=None,
+            priority="normal",
             **kwargs,
         )
 

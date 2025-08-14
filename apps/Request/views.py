@@ -41,6 +41,7 @@ class RequestViewSet(viewsets.ModelViewSet):
     serializer_class = RequestSerializer
     # permission_classes = [permissions.IsAuthenticated]
     permission_classes = [permissions.AllowAny]
+    authentication_classes = []
 
     def get_queryset(self):
         queryset = Request.objects.all()
@@ -315,15 +316,14 @@ class RequestViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # Use the Job model's create_job method
-            from apps.Job.models import Job
+            # Use strategy-based job creation
+            from apps.Job.services import JobService
 
-            kwargs = {
-                "price": price,
-                "is_instant": True if is_instant == False else True,
-                "minimum_bid": minimum_bid,
-            }
-            job = Job.create_job(instance, **kwargs)
+            # Seed base price if provided so strategy uses it
+            if price is not None:
+                instance.base_price = price
+                instance.save(update_fields=["base_price"])
+            job = JobService.create_job_with_strategy(instance)
 
             # Update request status to indicate job has been created
             instance.status = "confirmed"
@@ -358,8 +358,8 @@ class RequestViewSet(viewsets.ModelViewSet):
 
         return instance.stops.all().order_by("sequence")
 
-    @action(detail=False, methods=["post", "put"])
-    def submit_step1(self, request):
+    @action(detail=True, methods=["post", "put"])
+    def submit_step1(self, request, pk=None):
         """Handle step 1 submission (Contact Details)"""
         try:
             print("Step 1 submission:", json.dumps(request.data, indent=4))
@@ -367,7 +367,7 @@ class RequestViewSet(viewsets.ModelViewSet):
             # Get or create request instance
             instance = None
             if request.method == "PUT":
-                request_id = request.data.get("id")
+                request_id = request.data.get("request_id")
                 if request_id:
                     instance = get_object_or_404(Request, id=request_id)
                     data = request.data.copy()

@@ -1,0 +1,12 @@
+{{ title|default:"System Test" }}
+
+{{ message|default:"This is a test notification from the system." }}
+
+{% if action_url %}
+Action: {{ action_text|default:"View Details" }} -> {{ action_url }}
+{% endif %}
+
+--
+{{ app_name|default:"MoreVans" }} {{ current_year }}
+
+

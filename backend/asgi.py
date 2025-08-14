@@ -10,11 +10,9 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "backend.settings")
 # Combine all WebSocket patterns
 all_websocket_patterns = tracking_ws_patterns + chat_ws_patterns
 
-application = ProtocolTypeRouter({
-    "http": get_asgi_application(),
-    "websocket": AuthMiddlewareStack(
-        URLRouter(
-            all_websocket_patterns
-        )
-    ),
-})
+application = ProtocolTypeRouter(
+    {
+        "http": get_asgi_application(),
+        "websocket": AuthMiddlewareStack(URLRouter(all_websocket_patterns)),
+    }
+)

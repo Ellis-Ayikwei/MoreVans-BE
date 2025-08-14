@@ -1,3 +1,4 @@
+import json
 import os
 from django.contrib.auth import get_user_model
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
@@ -55,6 +56,7 @@ from .error_handlers import (
 )
 from .utils import send_otp_utility, verify_otp_utility, OTPValidator
 from .models import OTP, UserVerification
+from .models import TrustedDevice, LoginSession
 
 logger = logging.getLogger(__name__)
 
@@ -266,6 +268,8 @@ class LoginAPIView(APIView):
                 {"detail": "Authentication failed. Please try again."},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
+
+
 class LogoutAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -318,6 +322,9 @@ class LogoutAPIView(APIView):
 
 class PasswordRecoveryAPIView(APIView):
     permission_classes = [permissions.AllowAny]
+    authentication_classes = (
+        []
+    )  # Avoid SessionAuthentication CSRF enforcement for anonymous POST
 
     def post(self, request):
         email = request.data.get("email")
@@ -398,6 +405,9 @@ class PasswordResetConfirmAPIView(APIView):
     """
 
     permission_classes = [permissions.AllowAny]
+    authentication_classes = (
+        []
+    )  # Avoid SessionAuthentication CSRF enforcement for anonymous POST
 
     def post(self, request, uidb64, token):
         print("request data", request.data)
@@ -459,6 +469,7 @@ class PasswordChangeAPIView(APIView):
     """
 
     permission_classes = [permissions.IsAuthenticated]
+    authentication_classes = []
 
     def post(self, request):
         serializer = PasswordChangeSerializer(data=request.data)
@@ -492,116 +503,96 @@ class TokenRefreshView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        print("TokenRefreshView", request.headers)
-        # Detailed header logging
-        logger.debug("=== Token Refresh Request Headers ===")
-        for header, value in request.headers.items():
-            logger.debug(f"{header}: {value}")
-        logger.debug("=====================================")
+        # Minimal diagnostics without leaking secrets
+        try:
+            has_auth = bool(request.headers.get("Authorization"))
+            has_x_refresh = bool(request.headers.get("X-Refresh-Token"))
+            logger.debug(
+                f"TokenRefreshView headers -> Authorization: {'present' if has_auth else 'missing'}, X-Refresh-Token: {'present' if has_x_refresh else 'missing'}"
+            )
+        except Exception:
+            pass
 
-        # Get refresh token from X-Refresh-Token header first, then Authorization header
-        refresh_token = request.headers.get("X-Refresh-Token")
-        if not refresh_token:
-            # Fallback to Authorization header
+        # Extract refresh token from multiple sources
+        refresh_token_raw = (
+            request.headers.get("X-Refresh-Token")
+            or (
+                request.data.get("refresh_token")
+                if isinstance(request.data, dict)
+                else None
+            )
+            or request.COOKIES.get("_auth_refresh")
+            or None
+        )
+
+        if not refresh_token_raw:
+            # Fallback: try Authorization header if client mistakenly sends refresh there
             auth_header = request.headers.get("Authorization")
-            if not auth_header or not auth_header.startswith("Bearer "):
-                return Response(
-                    {"detail": "No valid refresh token provided."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            refresh_token = auth_header.split(" ")[1]
+            if auth_header and auth_header.startswith("Bearer "):
+                refresh_token_raw = auth_header.split(" ", 1)[1]
 
-        print("the refresh token", refresh_token)
+        if not refresh_token_raw:
+            return Response(
+                {"detail": "Refresh token not found in headers, body, or cookies."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # Normalize token string
+        try:
+            refresh_token_str = str(refresh_token_raw).strip().strip('"').strip("'")
+        except Exception:
+            return Response(
+                {"detail": "Invalid refresh token format."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if len(refresh_token_str) < 20:
+            return Response(
+                {"detail": "Invalid or expired token."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
 
         try:
-            # Verify and decode the refresh token
-            token_backend = TokenBackend(algorithm=api_settings.ALGORITHM)
+            # Validate via SimpleJWT (raises TokenError on invalid/expired)
+            refresh_obj = RefreshToken(refresh_token_str)
 
-            # Debug: Check if refresh_token is a string
-            if not isinstance(refresh_token, str):
-                logger.error(
-                    f"Refresh token is not a string: {type(refresh_token)} - {refresh_token}"
-                )
-                return Response(
-                    {"detail": "Invalid refresh token format."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            # Debug: Check token length
-            if len(refresh_token) < 10:
-                logger.error(
-                    f"Refresh token too short: {len(refresh_token)} characters"
-                )
-                return Response(
-                    {"detail": "Invalid refresh token length."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            token_data = token_backend.decode(refresh_token, verify=True)
-            print("the token data", token_data)
-
-            # Debug: Check token type
-            token_type = token_data.get("token_type")
-            if token_type != "refresh":
-                logger.warning(f"Token type is {token_type}, expected 'refresh'")
+            # Ensure token type is refresh
+            if refresh_obj.get("token_type") != "refresh":
                 return Response(
                     {"detail": "Invalid token type for refresh."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # Get user from token
-            user_id = token_data.get("user_id")
+            # Optional blacklist check omitted to avoid dependency on blacklist app state
+
+            user_id = refresh_obj.get("user_id")
             if not user_id:
                 return Response(
-                    {"detail": "Invalid token format."},
+                    {"detail": "Invalid token payload."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            user = User.objects.get(id=user_id)
-
-            # Check if token is blacklisted
-            from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
-
-            if BlacklistedToken.objects.filter(token=refresh_token).exists():
+            user = User.objects.filter(id=user_id).first()
+            if not user:
                 return Response(
-                    {"detail": "Token has been blacklisted."},
-                    status=status.HTTP_401_UNAUTHORIZED,
+                    {"detail": "User not found."}, status=status.HTTP_401_UNAUTHORIZED
                 )
 
-            # Generate new access token
-            refresh = RefreshToken.for_user(user)
-            new_access_token = str(refresh.access_token)
+            if not user.is_active:
+                raise AuthenticationFailed("User is inactive")
 
-            return Response(
-                {
-                    "access_token": new_access_token,
-                    "refresh_token": str(refresh),
-                    "user": {
-                        "id": user.id,
-                        "email": user.email,
-                        "first_name": user.first_name,
-                        "last_name": user.last_name,
-                        "is_active": user.is_active,
-                    },
-                },
-                status=status.HTTP_200_OK,
-            )
+            # Non-rotating: only issue a new access token
+            access_token = str(refresh_obj.access_token)
+
+            response = Response(status=status.HTTP_200_OK)
+            response["Authorization"] = f"Bearer {access_token}"
+            response["Access-Control-Expose-Headers"] = "Authorization"
+            return response
 
         except TokenError as e:
             logger.warning(f"Token refresh error: {str(e)}")
             return Response(
-                {"detail": "Invalid refresh token."},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
-        except User.DoesNotExist:
-            return Response(
-                {"detail": "User not found."}, status=status.HTTP_401_UNAUTHORIZED
-            )
-        except (TypeError, ValueError) as e:
-            # Handle JWT decoding errors (like "Expected a string value")
-            logger.warning(f"JWT decoding error: {str(e)}")
-            return Response(
-                {"detail": "Invalid token format."},
+                {"detail": "Invalid or expired token."},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
         except Exception as e:
@@ -610,6 +601,201 @@ class TokenRefreshView(APIView):
                 {"detail": "An error occurred during token refresh."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class ListTrustedDevicesView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, user_id):
+        if str(request.user.id) != str(user_id) and not request.user.is_staff:
+            return Response(status=403)
+        devices = TrustedDevice.objects.filter(user_id=user_id).order_by("-last_used")
+        current_hash = None
+        token = request.COOKIES.get("_auth_refresh")
+        if token:
+            import hashlib
+
+            current_hash = hashlib.sha256(token.encode()).hexdigest()
+        data = [
+            {
+                "id": str(d.id),
+                "device_name": d.device_name,
+                "device_info": d.device_info,
+                "last_used": d.last_used,
+                "created_at": d.created_at,
+                "expires_at": d.expires_at,
+                "is_active": d.is_active,
+                "is_current": bool(
+                    current_hash and current_hash == d.refresh_token_hash
+                ),
+            }
+            for d in devices
+        ]
+        return Response(data)
+
+
+class RevokeTrustedDeviceView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, device_id):
+        td = TrustedDevice.objects.filter(id=device_id, user=request.user).first()
+        if not td:
+            return Response(status=404)
+        td.is_active = False
+        td.refresh_token_hash = ""
+        td.save(update_fields=["is_active", "refresh_token_hash"])
+        resp = Response({"success": True})
+        # If current device, clear cookie
+        token = request.COOKIES.get("_auth_refresh")
+        if token:
+            import hashlib
+
+            if hashlib.sha256(token.encode()).hexdigest() == td.refresh_token_hash:
+                resp.delete_cookie("_auth_refresh")
+        return resp
+
+
+class RevokeAllTrustedDevicesView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, user_id):
+        if str(request.user.id) != str(user_id) and not request.user.is_staff:
+            return Response(status=403)
+        TrustedDevice.objects.filter(user_id=user_id).update(
+            is_active=False, refresh_token_hash=""
+        )
+        resp = Response({"success": True})
+        resp.delete_cookie("_auth_refresh")
+        return resp
+
+
+# class TokenRefreshView(APIView):
+#     """
+#     Takes a refresh token and returns an access token if the refresh token is valid.
+#     This view expects the refresh token to be in an HTTP-only cookie.
+#     """
+
+#     permission_classes = [permissions.AllowAny]
+
+#     def post(self, request):
+#         print("TokenRefreshView", request.headers)
+#         # Detailed header logging
+#         logger.debug("=== Token Refresh Request Headers ===")
+#         for header, value in request.headers.items():
+#             logger.debug(f"{header}: {value}")
+#         logger.debug("=====================================")
+
+#         # Get refresh token from X-Refresh-Token header first, then Authorization header
+#         refresh_token = request.headers.get("X-Refresh-Token")
+#         if not refresh_token:
+#             # Fallback to Authorization header
+#             auth_header = request.headers.get("Authorization")
+#             if not auth_header or not auth_header.startswith("Bearer "):
+#                 return Response(
+#                     {"detail": "No valid refresh token provided."},
+#                     status=status.HTTP_400_BAD_REQUEST,
+#                 )
+#             refresh_token = auth_header.split(" ")[1]
+
+#         print("the refresh token", refresh_token)
+
+#         try:
+#             # Verify and decode the refresh token
+#             token_backend = TokenBackend(algorithm=api_settings.ALGORITHM)
+
+#             # Debug: Check if refresh_token is a string
+#             if not isinstance(refresh_token, str):
+#                 logger.error(
+#                     f"Refresh token is not a string: {type(refresh_token)} - {refresh_token}"
+#                 )
+#                 return Response(
+#                     {"detail": "Invalid refresh token format."},
+#                     status=status.HTTP_400_BAD_REQUEST,
+#                 )
+
+#             # Debug: Check token length
+#             if len(refresh_token) < 10:
+#                 logger.error(
+#                     f"Refresh token too short: {len(refresh_token)} characters"
+#                 )
+#                 return Response(
+#                     {"detail": "Invalid refresh token length."},
+#                     status=status.HTTP_400_BAD_REQUEST,
+#                 )
+
+#             token_data = token_backend.decode(refresh_token, verify=True)
+#             print("the token data", token_data)
+
+#             # Debug: Check token type
+#             token_type = token_data.get("token_type")
+#             if token_type != "refresh":
+#                 logger.warning(f"Token type is {token_type}, expected 'refresh'")
+#                 return Response(
+#                     {"detail": "Invalid token type for refresh."},
+#                     status=status.HTTP_400_BAD_REQUEST,
+#                 )
+
+#             # Get user from token
+#             user_id = token_data.get("user_id")
+#             if not user_id:
+#                 return Response(
+#                     {"detail": "Invalid token format."},
+#                     status=status.HTTP_400_BAD_REQUEST,
+#                 )
+
+#             user = User.objects.get(id=user_id)
+
+#             # Check if token is blacklisted
+#             from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
+
+#             if BlacklistedToken.objects.filter(token=refresh_token).exists():
+#                 return Response(
+#                     {"detail": "Token has been blacklisted."},
+#                     status=status.HTTP_401_UNAUTHORIZED,
+#                 )
+
+#             # Generate new access token
+#             refresh = RefreshToken.for_user(user)
+#             new_access_token = str(refresh.access_token)
+
+#             return Response(
+#                 {
+#                     "access_token": new_access_token,
+#                     "refresh_token": str(refresh),
+#                     "user": {
+#                         "id": user.id,
+#                         "email": user.email,
+#                         "first_name": user.first_name,
+#                         "last_name": user.last_name,
+#                         "is_active": user.is_active,
+#                     },
+#                 },
+#                 status=status.HTTP_200_OK,
+#             )
+
+#         except TokenError as e:
+#             logger.warning(f"Token refresh error: {str(e)}")
+#             return Response(
+#                 {"detail": "Invalid refresh token."},
+#                 status=status.HTTP_401_UNAUTHORIZED,
+#             )
+#         except User.DoesNotExist:
+#             return Response(
+#                 {"detail": "User not found."}, status=status.HTTP_401_UNAUTHORIZED
+#             )
+#         except (TypeError, ValueError) as e:
+#             # Handle JWT decoding errors (like "Expected a string value")
+#             logger.warning(f"JWT decoding error: {str(e)}")
+#             return Response(
+#                 {"detail": "Invalid token format."},
+#                 status=status.HTTP_401_UNAUTHORIZED,
+#             )
+#         except Exception as e:
+#             logger.exception(f"Token refresh error: {str(e)}")
+#             return Response(
+#                 {"detail": "An error occurred during token refresh."},
+#                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             )
 
 
 class TokenVerifyView(APIView):
@@ -621,43 +807,61 @@ class TokenVerifyView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        # Get token from Authorization header
+        # Extract token from Authorization header, body, or cookies
+        token_raw = None
+
         auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Bearer "):
+        if auth_header and auth_header.startswith("Bearer "):
+            token_raw = auth_header.split(" ", 1)[1]
+
+        if not token_raw and isinstance(request.data, dict):
+            token_raw = request.data.get("token")
+
+        if not token_raw:
+            cookie_token = request.COOKIES.get("_auth") or request.COOKIES.get(
+                "access_token"
+            )
+            if cookie_token:
+                token_raw = cookie_token
+
+        if not token_raw:
             return Response(
                 {"detail": "No valid token provided."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        token = auth_header.split(" ")[1]
+        # Normalize token string
+        token_str = str(token_raw).strip().strip('"').strip("'")
+        if token_str.startswith("Bearer "):
+            token_str = token_str.split(" ", 1)[1]
 
+        if len(token_str) < 20:
+            return Response(
+                {"detail": "Invalid token."},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        # Try as access token first
         try:
-            # Verify and decode the token
-            token_backend = TokenBackend(algorithm=api_settings.ALGORITHM)
-            token_data = token_backend.decode(token, verify=True)
-
-            # Get user from token
-            user_id = token_data.get("user_id")
+            access = AccessToken(token_str)
+            user_id = access.get("user_id")
             if not user_id:
                 return Response(
-                    {"detail": "Invalid token format."},
+                    {"detail": "Invalid token payload."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            user = User.objects.get(id=user_id)
-
-            # Check if token is blacklisted
-            from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
-
-            if BlacklistedToken.objects.filter(token=token).exists():
+            try:
+                user = User.objects.get(id=user_id)
+            except User.DoesNotExist:
                 return Response(
-                    {"detail": "Token has been blacklisted."},
-                    status=status.HTTP_401_UNAUTHORIZED,
+                    {"detail": "User not found."}, status=status.HTTP_401_UNAUTHORIZED
                 )
 
             return Response(
                 {
                     "valid": True,
+                    "token_type": "access",
                     "user": {
                         "id": user.id,
                         "email": user.email,
@@ -668,15 +872,46 @@ class TokenVerifyView(APIView):
                 },
                 status=status.HTTP_200_OK,
             )
+        except TokenError:
+            pass
 
+        # Fallback: treat as refresh token
+        try:
+            refresh = RefreshToken(token_str)
+
+            # Optional blacklist check omitted to reduce coupling to blacklist models
+
+            user_id = refresh.get("user_id")
+            if not user_id:
+                return Response(
+                    {"detail": "Invalid token payload."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            user = User.objects.filter(id=user_id).first()
+            if not user:
+                return Response(
+                    {"detail": "User not found."}, status=status.HTTP_401_UNAUTHORIZED
+                )
+
+            return Response(
+                {
+                    "valid": True,
+                    "token_type": "refresh",
+                    "user": {
+                        "id": user.id,
+                        "email": user.email,
+                        "first_name": user.first_name,
+                        "last_name": user.last_name,
+                        "is_active": user.is_active,
+                    },
+                },
+                status=status.HTTP_200_OK,
+            )
         except TokenError as e:
             logger.warning(f"Token verification error: {str(e)}")
             return Response(
                 {"detail": "Invalid token."}, status=status.HTTP_401_UNAUTHORIZED
-            )
-        except User.DoesNotExist:
-            return Response(
-                {"detail": "User not found."}, status=status.HTTP_401_UNAUTHORIZED
             )
         except Exception as e:
             logger.exception(f"Token verification error: {str(e)}")
@@ -719,6 +954,7 @@ class SendOTPView(APIView):
     """Send OTP to user's email"""
 
     permission_classes = [permissions.AllowAny]
+    authentication_classes = []
     throttle_classes = [AnonRateThrottle]
 
     def post(self, request):
@@ -801,6 +1037,7 @@ class VerifyOTPView(APIView):
 
     permission_classes = [permissions.AllowAny]
     throttle_classes = [AnonRateThrottle]
+    authentication_classes = []
 
     def post(self, request):
         serializer = VerifyOTPSerializer(data=request.data)
@@ -923,6 +1160,7 @@ class ResendOTPView(APIView):
 
     permission_classes = [permissions.AllowAny]
     throttle_classes = [AnonRateThrottle]
+    authentication_classes = []
 
     def post(self, request):
         serializer = ResendOTPSerializer(data=request.data)
@@ -1035,9 +1273,11 @@ class LoginWithOTPView(APIView):
 
     permission_classes = [permissions.AllowAny]
     throttle_classes = [AnonRateThrottle]
+    authentication_classes = []
 
     def post(self, request):
         serializer = LoginWithOTPSerializer(data=request.data)
+        print("the login with otp data", json.dumps(request.data, indent=4))
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1163,10 +1403,11 @@ class MFALoginView(APIView):
 
     permission_classes = [permissions.AllowAny]
     throttle_classes = [AnonRateThrottle]
+    authentication_classes = []
 
     def post(self, request):
         serializer = MFALoginSerializer(data=request.data, context={"request": request})
-
+        print("the mfa login data", json.dumps(request.data, indent=4))
         try:
             serializer.is_valid(raise_exception=False)
             if not serializer.is_valid():
@@ -1353,6 +1594,62 @@ class MFALoginView(APIView):
             # Reset failed login attempts since first factor passed
             reset_failed_logins(user.email)
 
+            # Trusted device fast-path: if device is recognized and valid, skip OTP
+            try:
+                import hashlib, os
+
+                device_id = request.data.get("device_id")
+                device_name = request.data.get("device_name")
+                device_fp = request.data.get("fingerprint") or request.data.get(
+                    "device_fingerprint"
+                )
+                device_info = request.data.get("device_info")
+
+                if device_id and device_fp:
+                    salt = os.getenv("DEVICE_FINGERPRINT_SALT", "")
+                    fp_hash = hashlib.sha256(
+                        (salt + (device_fp or "")).encode()
+                    ).hexdigest()
+                    print("the fp hash", fp_hash)
+                    td = TrustedDevice.objects.filter(
+                        user=user, device_id=device_id, is_active=True
+                    ).first()
+                    print("the td", td)
+                    now = timezone.now()
+                    if (
+                        td
+                        and td.expires_at
+                        and td.expires_at > now
+                        and td.device_fingerprint_hash == fp_hash
+                    ):
+                        # Issue tokens directly
+                        refresh = RefreshToken.for_user(user)
+                        access = str(refresh.access_token)
+
+                        # Bind refresh to device by storing hash
+                        td.refresh_token_hash = hashlib.sha256(
+                            str(refresh).encode()
+                        ).hexdigest()
+                        td.last_used = now
+                        td.save(update_fields=["refresh_token_hash", "last_used"])
+
+                        resp = Response(
+                            {
+                                "message": "Trusted device recognized. Login successful.",
+                                "requires_otp": False,
+                                "user": UserAuthSerializer(user).data,
+                            }
+                        )
+                        resp["Authorization"] = f"Bearer {access}"
+                        resp["X-Refresh-Token"] = str(refresh)
+                        resp["Access-Control-Expose-Headers"] = (
+                            "Authorization, X-Refresh-Token"
+                        )
+                        return resp
+            except Exception:
+                # Fall back to OTP flow silently if trust check fails
+                pass
+
             # Send OTP for second factor
             result = send_otp_utility(user, "login", user.email)
 
@@ -1419,9 +1716,11 @@ class VerifyMFALoginView(APIView):
 
     permission_classes = [permissions.AllowAny]
     throttle_classes = [AnonRateThrottle]
+    authentication_classes = []
 
     def post(self, request):
         serializer = VerifyOTPSerializer(data=request.data)
+        print("the verify mfa login data", json.dumps(request.data, indent=4))
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1502,6 +1801,54 @@ class VerifyMFALoginView(APIView):
                 response["Access-Control-Expose-Headers"] = (
                     "Authorization, X-Refresh-Token"
                 )
+
+                # Optionally trust this device if requested
+                try:
+                    trust_device = bool(
+                        request.data.get("trust_device")
+                        or request.data.get("remember_device")
+                    )
+                    if trust_device:
+                        import hashlib, os
+                        from datetime import timedelta
+
+                        device_id = request.data.get("device_id")
+                        device_name = request.data.get("device_name")
+                        device_fp = request.data.get("fingerprint") or request.data.get(
+                            "device_fingerprint"
+                        )
+                        device_info = request.data.get("device_info")
+
+                        if device_id and device_fp:
+                            salt = os.getenv("DEVICE_FINGERPRINT_SALT", "")
+                            fp_hash = hashlib.sha256(
+                                (salt + (device_fp or "")).encode()
+                            ).hexdigest()
+                            now = timezone.now()
+                            expires_at = now + timedelta(
+                                days=int(os.getenv("DEVICE_TRUST_EXPIRY_DAYS", "30"))
+                            )
+
+                            new_trusted_device = TrustedDevice.objects.update_or_create(
+                                user=user,
+                                device_id=device_id,
+                                defaults={
+                                    "device_fingerprint_hash": fp_hash,
+                                    "device_name": device_name,
+                                    "device_info": device_info,
+                                    "refresh_token_hash": hashlib.sha256(
+                                        str(refresh).encode()
+                                    ).hexdigest(),
+                                    "last_used": now,
+                                    "expires_at": expires_at,
+                                    "is_active": True,
+                                },
+                            )
+                            print("the new trusted device", new_trusted_device)
+                            new_trusted_device.save()
+                except Exception:
+                    # Do not fail login if trust persistence fails
+                    pass
 
                 return response
             else:

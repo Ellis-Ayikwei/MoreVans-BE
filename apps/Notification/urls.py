@@ -6,7 +6,7 @@ router = DefaultRouter()
 router.register(r"notifications", NotificationViewSet, basename="notification")
 
 urlpatterns = [
-    path("api/", include(router.urls)),
+    path("", include(router.urls)),
 ]
 
 # Individual endpoints for easier access

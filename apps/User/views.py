@@ -130,7 +130,12 @@ class UserManagementViewSet(viewsets.ModelViewSet):
 
         return queryset
 
-    @action(detail=False, methods=["post"], permission_classes=[permissions.AllowAny])
+    @action(
+        detail=False,
+        methods=["post"],
+        permission_classes=[permissions.AllowAny],
+        authentication_classes=[],  # prevent SessionAuthentication CSRF for public POST
+    )
     def create_customer(self, request):
         """
         Creates a new customer user or returns existing user if email already exists.

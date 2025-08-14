@@ -45,6 +45,7 @@ class Notification(Basemodel):
         ("policy_update", "Policy Update"),
         ("feature_announcement", "New Feature"),
         ("account_warning", "Account Warning"),
+        ("system_test", "System Test"),
         # Legacy types for backward compatibility
         ("payment", "Payment Notification"),
         ("bid", "Bid Notification"),
@@ -107,7 +108,7 @@ class Notification(Basemodel):
     )
 
     def __str__(self):
-        return self.title
+        return str(self.title or f"Notification {self.pk}")
 
     class Meta:
         db_table = "notification"
@@ -148,11 +149,18 @@ class Notification(Basemodel):
     def delivery_status(self):
         """Get delivery status across all channels"""
         status = {}
-        if "email" in self.delivery_channels:
+        channels = self.delivery_channels or []
+        if not isinstance(channels, list):
+            try:
+                channels = list(channels)
+            except Exception:
+                channels = []
+
+        if "email" in channels:
             status["email"] = self.email_sent
-        if "sms" in self.delivery_channels:
+        if "sms" in channels:
             status["sms"] = self.sms_sent
-        if "push" in self.delivery_channels:
+        if "push" in channels:
             status["push"] = self.push_sent
         status["in_app"] = True  # Always available in-app
         return status

@@ -620,18 +620,10 @@ class Request(Basemodel):
         if self.job:
             raise ValueError("Job Cretad Already")
 
-        # Create a new job instance
-        job = Job.objects.create(
-            request=self,
-            user=self.user,
-            status="pending",
-            base_price=self.base_price,
-            final_price=self.final_price,
-            service_level=self.service_level,
-            priority=self.priority,
-            tracking_number=self.tracking_number,
-            **kwargs,
-        )
+        # Create a new job instance using strategy service
+        from apps.Job.services import JobService
+
+        job = JobService.create_job_with_strategy(self)
 
         # Update request status
         self.status = "assigned"
@@ -1020,16 +1012,10 @@ class MoveMilestone(Basemodel):
             if existing_job:
                 return existing_job
 
-            # Create a new job
-            job = Job.objects.create(
-                request=self,
-                status="draft",  # Start as draft, will be updated to bidding when ready
-                bidding_end_time=None,  # Will be set when bidding starts
-                minimum_bid=None,  # Will be set based on request details
-                preferred_vehicle_types=self.vehicle_type,  # Use the request's vehicle type
-                required_qualifications=self.required_qualifications,  # Copy from request
-                notes=f"Job created for request {self.tracking_number}",
-            )
+            # Create a new job with strategy
+            from apps.Job.services import JobService
+
+            job = JobService.create_job_with_strategy(self)
             return job
         return None
 
