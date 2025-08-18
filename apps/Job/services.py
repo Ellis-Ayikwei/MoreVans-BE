@@ -219,6 +219,12 @@ class JobService:
         """
         from .models import Job, TimelineEvent
 
+        def create_job_title(request):
+            for stop in request.stops.all():
+                if stop.location.city:
+                    return f"Move request from {stop.location.city} to {request.dropoff_location.city if request.dropoff_location else 'Unknown'}"
+            return f"Move request from {request.pickup_location.city if request.pickup_location else 'Unknown'} to {request.dropoff_location.city if request.dropoff_location else 'Unknown'}"
+
         # Create the job
         job = Job.objects.create(
             request=request,

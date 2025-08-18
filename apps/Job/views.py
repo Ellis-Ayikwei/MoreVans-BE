@@ -5,8 +5,10 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
 from django.db.models import Q
+
+from apps.User.views import IsAdminUser
 from .models import Job
-from .serializers import JobSerializer
+from .serializers import JobSerializer, ProviderSideJobSerializer
 from apps.Request.models import Request
 from apps.Bidding.models import Bid
 from apps.Bidding.serializers import BidSerializer
@@ -45,6 +47,12 @@ class JobViewSet(viewsets.ModelViewSet):
             queryset = queryset.filter(provider_id=provider)
 
         return queryset
+
+    def get_serializer_class(self):
+        user = getattr(self.request, "user", None)
+        if user and getattr(user, "user_type", None) == "provider":
+            return ProviderSideJobSerializer
+        return JobSerializer
 
     def perform_create(self, serializer):
         request_id = self.request.data.get("request")
@@ -196,13 +204,97 @@ class JobViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
-    @action(detail=True, methods=["post"])
+    @action(
+        detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated]
+    )
     def accept(self, request, pk=None):
+        """Accept a job"""
+        from apps.Provider.models import ServiceProvider
+        from apps.Job.models import JobProviderAcceptance
+
         job = self.get_object()
-        job.accept(request.user)
-        return Response({"status": "Job accepted"})
+        print("the request data is", request.data)
+        provider_id = request.data.get("provider_id")
+
+        # Resolve provider
+        provider = None
+        if provider_id:
+            try:
+                provider = ServiceProvider.objects.get(id=provider_id)
+            except ServiceProvider.DoesNotExist:
+                # Try treating the provided id as a user id
+                try:
+                    provider = ServiceProvider.objects.get(user__id=provider_id)
+                except ServiceProvider.DoesNotExist:
+                    return Response(
+                        {"error": "Provider not found"},
+                        status=status.HTTP_404_NOT_FOUND,
+                    )
+        else:
+            # Default to the authenticated user's provider profile
+            try:
+                provider = ServiceProvider.objects.get(user=request.user)
+            except ServiceProvider.DoesNotExist:
+                return Response(
+                    {"error": "Authenticated user has no provider profile"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+        if provider.user.account_status != "active":
+            return Response(
+                {"error": "Provider is not active"}, status=status.HTTP_400_BAD_REQUEST
+            )
+        if provider.verification_status != "verified":
+            return Response(
+                {"error": "Provider is not verified"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            # Mark job as accepted by current user
+            print("the provider is", provider)
+            job.accept_job(provider)
+            return Response({"status": "Job accepted"})
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=["post"])
+    def reject_acceptance(self, request, pk=None):
+        """Reject a job"""
+        from apps.Provider.models import ServiceProvider
+
+        job = self.get_object()
+        provider_id = request.data.get("provider_id")
+        provider = ServiceProvider.objects.get(id=provider_id)
+        job.reject_job(provider)
+        return Response({"status": "Job rejected"})
+
+    @action(detail=True, methods=["post"])
+    def unaccept(self, request, pk=None):
+        """Unaccept a job"""
+        from apps.Provider.models import ServiceProvider
+
+        job = self.get_object()
+        provider_id = request.data.get("provider_id")
+        provider = ServiceProvider.objects.get(user__id=provider_id)
+        job.unaccept_job(provider)
+        return Response({"status": "Job unaccepted"})
+
+    @action(detail=True, methods=["delete"])
+    def delete_acceptance(self, request, pk=None):
+        """Delete a job acceptance"""
+        from apps.Provider.models import ServiceProvider
+
+        job = self.get_object()
+        provider_id = request.data.get("provider_id")
+        provider = ServiceProvider.objects.get(id=provider_id)
+        job.delete_acceptance(provider)
+        return Response({"status": "Job acceptance deleted"})
+
+    @action(
+        detail=True,
+        methods=["post"],
+        permission_classes=[permissions.IsAuthenticated, IsAdminUser],
+    )
     def assign_provider(self, request, pk=None):
         """Assign a provider to a job"""
         from apps.Provider.models import ServiceProvider

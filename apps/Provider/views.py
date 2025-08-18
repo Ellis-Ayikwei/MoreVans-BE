@@ -302,10 +302,27 @@ class ServiceProviderViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-    @action(detail=False, methods=["get"])
+    @action(
+        detail=True, methods=["post"], permission_classes=[permissions.IsAuthenticated]
+    )
     def accept_job(self, request):
         """Accept a job"""
         job_id = request.query_params.get("job_id")
+        provider = ServiceProvider.objects.get(user=request.user)
+        if provider.user.status != "active":
+            return Response(
+                {"error": "Provider is not active"}, status=status.HTTP_400_BAD_REQUEST
+            )
+        if provider.verification_status != "verified":
+            return Response(
+                {"error": "Provider is not verified"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not provider:
+            return Response(
+                {"error": "Provider not found"}, status=status.HTTP_404_NOT_FOUND
+            )
 
         if not job_id:
             return Response(
@@ -315,7 +332,7 @@ class ServiceProviderViewSet(viewsets.ModelViewSet):
 
         try:
             job = Job.objects.get(id=job_id)
-            job.accept_bid(request.user)
+            job.accept_job(provider)
             return Response({"status": "Job accepted"})
         except ObjectDoesNotExist:
             return Response(

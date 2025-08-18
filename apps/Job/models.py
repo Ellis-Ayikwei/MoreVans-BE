@@ -332,20 +332,52 @@ class Job(Basemodel):
 
         return job
 
-    def accept(self, provider):
-        """Accept a job"""
-        if self.status == "accepted":
-            raise ValueError("Job has already been accepted")
+    # def accept(self, provider):
+    #     """Accept a job"""
+    #     if self.status == "accepted":
+    #         raise ValueError("Job has already been accepted")
 
-        if self.assigned_provider is not None:
-            raise ValueError("Job already has an assigned provider")
+    #     if self.assigned_provider is not None:
+    #         raise ValueError("Job already has an assigned provider")
 
-        if self.status not in ["pending", "bidding"]:
-            raise ValueError(f"Job cannot be accepted from status '{self.status}'")
+    #     if self.status not in ["pending", "bidding"]:
+    #         raise ValueError(f"Job cannot be accepted from status '{self.status}'")
 
-        self.status = "accepted"
-        self.assigned_provider = provider
-        self.save()
+    #     self.status = "accepted"
+    #     self.assigned_provider = provider
+    #     self.save()
+
+    def accept_job(self, provider):
+        """Accept a job by a provider"""
+        JobProviderAcceptance.objects.create(job=self, provider=provider)
+        return True
+
+    def reject_job(self, provider):
+        """Reject a job by a provider"""
+        accepted_job = JobProviderAcceptance.objects.filter(
+            job=self, provider=provider
+        ).first()
+        if accepted_job:
+            accepted_job.delete()
+        return True
+
+    def delete_acceptance(self, provider):
+        """Delete a job acceptance"""
+        accepted_job = JobProviderAcceptance.objects.filter(
+            job=self, provider=provider
+        ).first()
+        if accepted_job:
+            accepted_job.delete()
+        return True
+
+    def unaccept_job(self, provider):
+        """Unaccept a job"""
+        accepted_job = JobProviderAcceptance.objects.filter(
+            job=self, provider=provider
+        ).first()
+        if accepted_job:
+            accepted_job.delete()
+        return True
 
     def __str__(self):
         return f"{self.job_number} - {self.title}"
@@ -573,35 +605,6 @@ class Job(Basemodel):
         self.assigned_provider = None
         _ = unassigned_by
         self.save()
-
-    def accept_job(self, accepted_by):
-        """
-        Mark a job as accepted by a provider.
-
-        Args:
-            accepted_by: The user accepting the job
-
-        Raises:
-            ValueError: If job is not in a valid state to be accepted
-        """
-        if self.status not in ["pending", "bidding"]:
-            raise ValueError(f"Cannot accept job in state: {self.status}")
-
-        old_status = self.status
-        self.status = "accepted"
-        self.save()
-
-        # Create timeline event
-        TimelineEvent.objects.create(
-            job=self,
-            event_type="provider_accepted",
-            description="Job has been accepted",
-            created_by=accepted_by,
-            metadata={
-                "accepted_at": timezone.now().isoformat(),
-                "previous_status": old_status,
-            },
-        )
 
     @property
     def can_be_completed(self):
